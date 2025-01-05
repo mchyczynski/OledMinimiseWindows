@@ -81,7 +81,7 @@ public static class DisplayFusionFunction
         uint monitorId = GetOledMonitorID();
 
         // get windows to be minimized
-        IntPtr[] windowsToMinimize = GetFilteredWindows(monitorId);
+        IntPtr[] windowsToMinimize = GetFilteredVisibleWindows(monitorId);
 
         int minimizedWindowsCount = 0;
         // loop through all the visible windows on the cursor monitor
@@ -128,7 +128,7 @@ public static class DisplayFusionFunction
         if(forceAll) // maximize all windows on OLED monitor
         {
             // get monitor ID of OLED monitor (assumption it is the only 4k monitor in the system)
-            windowsToMaximize = GetFilteredWindows(GetOledMonitorID(), true).ToList();
+            windowsToMaximize = GetFilteredMinimizedWindows(GetOledMonitorID()).ToList();
         }
         else // only maximize windows previously minimized
         {
@@ -190,78 +190,71 @@ public static class DisplayFusionFunction
         return UInt32.MaxValue;
     }
 
-    // todo refactor separate func only minimized
-    public static IntPtr[] GetFilteredWindows(uint monitorId, bool includeMinimized = false)
+    public static IntPtr[] GetFilteredVisibleWindows(uint monitorId)
     {
-        IntPtr[] allWindows = {};
-        
-        if(includeMinimized)
-        {
-			allWindows = BFS.Window.GetVisibleAndMinimizedWindowHandles().Where(windowHandle => {
-                if(!BFS.Window.IsMinimized(windowHandle)) return false;
-
-				Rectangle currentWindowMonitorBounds = WindowUtils.GetMonitorBoundsFromWindow(windowHandle);
-
-				if (currentWindowMonitorBounds.Width != RESOLUTION_4K_WIDTH || 
-					currentWindowMonitorBounds.Height != RESOLUTION_4K_HEIGHT)
-				{
-                    // todo remove??
-                    string text = BFS.Window.GetText(windowHandle);
-                    Rectangle windowRect = WindowUtils.GetBounds(windowHandle);
-                    string classname = BFS.Window.GetClass(windowHandle);                    
-					if (debugWindowFiltering) MessageBox.Show($"Filtering wrong monitor\n\ntext:{text}\n\nclass:{classname}\n\nsize:{windowRect.ToString()} monitor bounds:w{currentWindowMonitorBounds.Width}h{currentWindowMonitorBounds.Height}");
-					return false;
-				}  
-                return true;
-            }).ToArray();
-
-        }
-        else
-        {
-            allWindows = BFS.Window.GetVisibleWindowHandlesByMonitor(monitorId);
-        }
-
-        IntPtr[] filteredWindows = allWindows.Where(windowHandle =>
-        {
-
-            // Ignore already minimized windows
-            if (BFS.Window.IsMinimized(windowHandle) && !includeMinimized)
-            {
-                return false;
-            }
-
-            // Ignore windows based on classname blacklist
-            string classname = BFS.Window.GetClass(windowHandle);
-            if (classnameBlacklist.Exists(blacklistItem => classname.StartsWith(blacklistItem, StringComparison.Ordinal)))
-            {
-                return false;
-            }
-
-            // Ignore windows based on text blacklist or is empty
-            string text = BFS.Window.GetText(windowHandle);
-            if (string.IsNullOrEmpty(text))
-            {
-                return false;
-            }
-
-            if (textBlacklist.Exists(blacklistItem => text.StartsWith(blacklistItem, StringComparison.Ordinal)))
-            {
-                return false;
-            }
-
-            // Ignore windows with wrong size
-            Rectangle windowRect = WindowUtils.GetBounds(windowHandle);
-            if (windowRect.Width <= 0 || windowRect.Height <= 0)
-            {
-                MessageBox.Show($"Filtered out windows wrong size (w{windowRect.Width}, h{windowRect.Height}). classname: {classname}, text: {text})");
-                return false;
-            }
-
-            return true;
-        }).ToArray();
+        IntPtr[] allWindows = BFS.Window.GetVisibleWindowHandlesByMonitor(monitorId);
+        IntPtr[] filteredWindows = allWindows.Where(FilterBlacklistedWindowsOut).ToArray();
 
         return filteredWindows;
     }
+
+    public static IntPtr[] GetFilteredMinimizedWindows(uint monitorId)
+    {
+        // Get minimized windows from OLED 4k monitor
+        IntPtr[] allWindows = BFS.Window.GetVisibleAndMinimizedWindowHandles().Where(windowHandle => {
+            // Ignore windows that are not minimized
+            if(!BFS.Window.IsMinimized(windowHandle)) return false;
+
+            // Find monitor size od minimized window
+            Rectangle currentWindowMonitorBounds = WindowUtils.GetMonitorBoundsFromWindow(windowHandle);
+
+            // FIlter window out when it would be restored to other monitors than OLED 4k
+            if (currentWindowMonitorBounds.Width != RESOLUTION_4K_WIDTH || 
+                currentWindowMonitorBounds.Height != RESOLUTION_4K_HEIGHT)
+            {
+                return false;
+            }  
+            return true;
+        }).ToArray();
+
+        IntPtr[] filteredWindows = allWindows.Where(FilterBlacklistedWindowsOut).ToArray();
+        return filteredWindows;
+    }
+
+    public static bool FilterBlacklistedWindowsOut(IntPtr windowHandle)
+    {
+        // Ignore windows based on classname blacklist
+        string classname = BFS.Window.GetClass(windowHandle);
+        if (classnameBlacklist.Exists(blacklistItem => classname.StartsWith(blacklistItem, StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
+        // Ignore windows based on empty text
+        string text = BFS.Window.GetText(windowHandle);
+        if (string.IsNullOrEmpty(text))
+        {
+            return false;
+        }
+
+        // Ignore windows based on text blacklist 
+        if (textBlacklist.Exists(blacklistItem => text.StartsWith(blacklistItem, StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
+        // Ignore windows with wrong size
+        Rectangle windowRect = WindowUtils.GetBounds(windowHandle);
+        if (windowRect.Width <= 0 || windowRect.Height <= 0)
+        {
+            // todo is it needed? add if for print-debug-flag
+            MessageBox.Show($"Filtered out windows wrong size (w{windowRect.Width}, h{windowRect.Height}). classname: {classname}, text: {text})");
+            return false;
+        }
+
+        return true;
+    }
+
 
     public static class WindowUtils
     {
