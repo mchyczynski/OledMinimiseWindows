@@ -24,9 +24,14 @@ public static class DisplayFusionFunction
 	private const string MinimizedWindowsSetting = "CursorMonitorMinimizedWindows";
 	private const string MinimizedState = "0";
 	private const string NormalizeState = "1";
-	
-	public static bool debufPrint = false;
-	public static bool debufPrintStartStop = false;
+
+    private const uint RESOLUTION_4K_WIDTH = 3840;
+    private const uint RESOLUTION_4K_HEIGHT = 2160;
+
+	private static bool enableDebugPrints = true;
+	private static bool debugPrint = false;
+	private static bool debugPrintStartStop = false;
+	private static bool debugPrintFindMonitorId = enableDebugPrints && false;
 	
 	public static IntPtr[] getFilteredWindows(uint monitorId)
 	{
@@ -82,19 +87,38 @@ public static class DisplayFusionFunction
 		}).ToArray();
 		return filteredWindows;
 	}
+
+    public static uint GetOledMonitorID()
+    {
+        foreach(uint id in BFS.Monitor.GetMonitorIDs())
+        {
+            Rectangle bounds = BFS.Monitor.GetMonitorBoundsByID(id);
+            if(bounds.Width == RESOLUTION_4K_WIDTH && bounds.Height == RESOLUTION_4K_HEIGHT) 
+            {
+                if(debugPrintFindMonitorId) MessageBox.Show($"found 4k monitor with ID: {id}");            
+                return id;
+            }
+        }
+        
+        MessageBox.Show($"ERROR! did not find monitor with 4k resolution");            
+        return UInt32.MaxValue;
+    }
 	
 	public static void Run(IntPtr windowHandle)
 	{
 		//check to see if we are minimizing 
 		if(IsScriptInMinimizeState())
 		{
-			if(debufPrintStartStop) MessageBox.Show("minimize");
+			if(debugPrintStartStop) MessageBox.Show("minimize");
 			//this will store the windows that we are minimizing so we can restore them later
 			string minimizedWindows = "";
 			
-			//get the monitor that the cursor is on
-			uint monitorId = BFS.Monitor.GetMonitorIDByXY(BFS.Input.GetMousePositionX(), BFS.Input.GetMousePositionY());
-			if(debufPrint) MessageBox.Show("have monitor");
+			// get the monitor that the cursor is on
+			// uint monitorId = BFS.Monitor.GetMonitorIDByXY(BFS.Input.GetMousePositionX(), BFS.Input.GetMousePositionY());
+           
+            // get monitor ID of OLED monitor (assumption it is the only 4k monitor in the system)
+            uint monitorId = GetOledMonitorID();
+
 
 			//loop through all the visible windows on the cursor monitor
 			foreach(IntPtr window in getFilteredWindows(monitorId))
@@ -107,16 +131,16 @@ public static class DisplayFusionFunction
 					BFS.Window.GetClass(window).Equals("WorkerW", StringComparison.Ordinal) ||
 					BFS.Window.GetClass(window).Equals("SearchPane", StringComparison.Ordinal))
 				{
-					if(debufPrint) MessageBox.Show($"skipping window {text}");
+					if(debugPrint) MessageBox.Show($"skipping window {text}");
 					continue;
 				}
 				else
 				{
-					if(debufPrint) MessageBox.Show($"checking window {text}");
+					if(debugPrint) MessageBox.Show($"checking window {text}");
 				}
 				
 				//minimize the window
-				if(debufPrint) MessageBox.Show($"minimizing {text}");
+				if(debugPrint) MessageBox.Show($"minimizing {text}");
 				BFS.Window.Minimize(window);
 				
 				//add the window to the list of windows
@@ -130,12 +154,12 @@ public static class DisplayFusionFunction
 			BFS.ScriptSettings.WriteValue(ScriptStateSetting, NormalizeState);
 			
 			//exit the script
-			if(debufPrintStartStop) MessageBox.Show("finished MIN");
+			if(debugPrintStartStop) MessageBox.Show("finished MIN");
 			return;
 		}
 		else
 		{
-			if(debufPrintStartStop) MessageBox.Show("maximize");
+			if(debugPrintStartStop) MessageBox.Show("maximize");
 		}
 		
 		//if we got here, we are in the normalize window state
@@ -160,7 +184,7 @@ public static class DisplayFusionFunction
 		
 		//set the script to MinimizedState
 		BFS.ScriptSettings.WriteValue(ScriptStateSetting, MinimizedState);
-		if(debufPrintStartStop) MessageBox.Show("finished MAAAX");
+		if(debugPrintStartStop) MessageBox.Show("finished MAAAX");
 	}
 	
 	//script is in minimize state if there is no setting, or if the setting is equal to MinimizedState
