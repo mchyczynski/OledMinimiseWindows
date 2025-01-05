@@ -23,7 +23,7 @@ public static class DisplayFusionFunction
     private const uint RESOLUTION_4K_HEIGHT = 2160;
 
     private static bool enableDebugPrints = true;
-    private static bool debugPrintDoMinMax = enableDebugPrints && false;
+    private static bool debugPrintDoMinRestore = enableDebugPrints && false;
     private static bool debugPrintStartStop = enableDebugPrints && false;
     private static bool debugPrintFindMonitorId = enableDebugPrints && false;
     private static bool debugPrintNoMonitorFound = enableDebugPrints && true;
@@ -45,18 +45,18 @@ public static class DisplayFusionFunction
         {
             int minimizedCount = MinimizeWindows();
 
-            // maximize windows when there was nothing to minimze
+            // restore all windows when there was nothing to minimze
             if(minimizedCount < 1)
             {
-                MaximizeWindows(true);
+                RestoreWindows(true); // force all windows restore
             }
         }
         else
         {
-            int maximizedCount = MaximizeWindows(false);
+            int restoredCount = RestoreWindows(false);
 
             // minimize windows when there was nothing to restore
-            if (maximizedCount < 1)
+            if (restoredCount < 1)
             {
                 MinimizeWindows();
             }
@@ -90,7 +90,7 @@ public static class DisplayFusionFunction
             // minimize the window
             if(!BFS.Window.IsMinimized(window))
             {
-                if (debugPrintDoMinMax) MessageBox.Show($"minimizing window {BFS.Window.GetText(window)}");
+                if (debugPrintDoMinRestore) MessageBox.Show($"minimizing window {BFS.Window.GetText(window)}");
                 BFS.Window.Minimize(window);
                 minimizedWindowsCount += 1;
 
@@ -99,7 +99,7 @@ public static class DisplayFusionFunction
             }
             else
             {
-                if (debugPrintDoMinMax) MessageBox.Show($"already minimized window {BFS.Window.GetText(window)}");
+                if (debugPrintDoMinRestore) MessageBox.Show($"already minimized window {BFS.Window.GetText(window)}");
             }
 
         }
@@ -115,25 +115,25 @@ public static class DisplayFusionFunction
         return minimizedWindowsCount;
     }
 
-    public static int MaximizeWindows(bool forceAll)
+    public static int RestoreWindows(bool forceAll)
     {
-        if (debugPrintStartStop) MessageBox.Show("start MAX");
+        if (debugPrintStartStop) MessageBox.Show("start RESTORE");
 
         // we are in the normalize window state
         // get the windows that we minimized previously
         string windows = BFS.ScriptSettings.ReadValue(MinimizedWindowsSetting);
 
-        // get windows to be maximized
-        List<IntPtr> windowsToMaximize = new List<IntPtr>();
-        if(forceAll) // maximize all windows on OLED monitor
+        // get windows to be restored
+        List<IntPtr> windowsToRestore = new List<IntPtr>();
+        if(forceAll) // restore all windows on OLED monitor
         {
             // get monitor ID of OLED monitor (assumption it is the only 4k monitor in the system)
-            windowsToMaximize = GetFilteredMinimizedWindows(GetOledMonitorID()).ToList();
+            windowsToRestore = GetFilteredMinimizedWindows(GetOledMonitorID()).ToList();
         }
-        else // only maximize windows previously minimized
+        else // only restore windows previously minimized
         {
-            string[] windowsToMaximizeStrings = windows.Split(new char[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
-            foreach (string window in windowsToMaximizeStrings)
+            string[] windowsToRestoreStrings = windows.Split(new char[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (string window in windowsToRestoreStrings)
             {
                 // try to turn the string into a long value
                 // if we can't convert it, go to the next setting
@@ -141,26 +141,26 @@ public static class DisplayFusionFunction
                 if (!Int64.TryParse(window, out windowHandleValue))
                     continue;
                 
-               windowsToMaximize.Add(new IntPtr(windowHandleValue));
+               windowsToRestore.Add(new IntPtr(windowHandleValue));
             }
         }
 
         int restoredWindowsCount = 0;
         // loop through each setting
-        foreach (IntPtr windowHandle in windowsToMaximize)
+        foreach (IntPtr windowHandle in windowsToRestore)
         {
 
 
             // restore the window
             if(BFS.Window.IsMinimized(windowHandle))
             {
-                if (debugPrintDoMinMax) MessageBox.Show($"maximizing window {BFS.Window.GetText(new IntPtr(windowHandle))}");
+                if (debugPrintDoMinRestore) MessageBox.Show($"restoring window {BFS.Window.GetText(new IntPtr(windowHandle))}");
                 BFS.Window.Restore(windowHandle);
                 restoredWindowsCount += 1;
             }
             else 
             {
-                if (debugPrintDoMinMax) MessageBox.Show($"already restored window {BFS.Window.GetText(new IntPtr(windowHandle))}");
+                if (debugPrintDoMinRestore) MessageBox.Show($"already restored window {BFS.Window.GetText(new IntPtr(windowHandle))}");
             }
         }
 
@@ -169,7 +169,7 @@ public static class DisplayFusionFunction
 
         // set the script to MinimizedState
         BFS.ScriptSettings.WriteValue(ScriptStateSetting, MinimizedState);
-        if (debugPrintStartStop) MessageBox.Show($"finished MAX (maximized {restoredWindowsCount}/{windowsToMaximize.Count} windows)");
+        if (debugPrintStartStop) MessageBox.Show($"finished RESTORE (restored {restoredWindowsCount}/{windowsToRestore.Count} windows)");
 
         return restoredWindowsCount;
     }
