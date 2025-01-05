@@ -26,54 +26,50 @@ public static class DisplayFusionFunction
 	private static bool debugPrint = false;
 	private static bool debugPrintStartStop = false;
 	private static bool debugPrintFindMonitorId = enableDebugPrints && false;
-	
+
+
+
+    private static List<string> classnameBlacklist = new List<string> {"DFTaskbar", "DFTitleBarWindow", "Shell_TrayWnd",
+                                                                       "tooltips", "Shell_InputSwitchTopLevelWindow", 
+                                                                       "Windows.UI.Core.CoreWindow", "Progman", "SizeTipClass",
+                                                                       "DF", "WorkerW", "SearchPane"};
+	private static List<string> textBlacklist = new List<string> {"Program Manager", "Volume Mixer", "Snap Assist", "Greenshot capture form", 
+                                                                  "Battery Information", "Date and Time Information", "Network Connections",
+                                                                  "Volume Control", "Start", "Search"};
+
 	public static IntPtr[] getFilteredWindows(uint monitorId)
 	{
 		IntPtr[] allWindows = BFS.Window.GetVisibleWindowHandlesByMonitor(monitorId);
 			
 		IntPtr[] filteredWindows = allWindows.Where(windowHandle => {
 
+            // Ignore already minimized windows
+            if (BFS.Window.IsMinimized(windowHandle)) 
+			{
+				return false;
+			}
+
+            // Ignore windows based on classname blacklist
 			string classname = BFS.Window.GetClass(windowHandle);
-			//Rectangle windowRect = WindowUtils.GetBounds(windowHandle);
+            if(classnameBlacklist.Exists(blacklistItem => classname.StartsWith(blacklistItem, StringComparison.Ordinal)))
+            {
+                return false;
+            }
 
-			if(classname.StartsWith("DFTaskbar") || 
-			   classname.StartsWith("DFTitleBarWindow") ||
-			   classname.StartsWith("Shell_TrayWnd") || 
-			   classname.StartsWith("tooltips") ||
-			   classname.StartsWith("Shell_InputSwitchTopLevelWindow") || // language swich in taskbar
-			   classname.StartsWith("Windows.UI.Core.CoreWindow") ||  // Start and Search windows
-			   classname.StartsWith("Progman") || // Program Manager
-			   classname.StartsWith("SizeTipClass") || // When resizing
-               classname.StartsWith("DF", StringComparison.Ordinal) ||
-               classname.Equals("WorkerW", StringComparison.Ordinal) ||
-               classname.Equals("SearchPane", StringComparison.Ordinal))
-			{
-				return false;
-			}
-
-			if (BFS.Window.IsMinimized(windowHandle)) // ignore minimized
-			{
-				return false;
-			}
-
+            // Ignore windows based on text blacklist or is empty
 			string text = BFS.Window.GetText(windowHandle);
-			if (string.IsNullOrEmpty(text) 
-			    || text == "Program Manager" // also class Progman
-			    || text == "Volume Mixer" // can be moved but prefer not to
-			    || text == "Snap Assist"
-			    || text == "Greenshot capture form" // when selecting area to screenshot (also maybe can be filtered out by size of all monitors)
-			    || text == "Battery Information" // also class Windows.UI.Core.CoreWindow
-			    || text == "Date and Time Information" // also class Windows.UI.Core.CoreWindow
-			    || text == "Network Connections" // also class Windows.UI.Core.CoreWindow
-			    || text == "Volume Control" // also class Windows.UI.Core.CoreWindow
-			    || text == "Start" // also class Windows.UI.Core.CoreWindow
-			    || text == "Search" // also class Windows.UI.Core.CoreWindow
-				)
-			{
-				return false;
-			}
+            if (string.IsNullOrEmpty(text))
+            {
+                return false;
+            } 
 
-			
+            if(textBlacklist.Exists(blacklistItem => text.StartsWith(blacklistItem, StringComparison.Ordinal)))
+            {
+                return false;
+            }
+
+            // Ignore windows with wrong size // TODO check
+			//Rectangle windowRect = WindowUtils.GetBounds(windowHandle);
 			//if (windowRect.Width <= 0 || windowRect.Height <= 0)
 			//{
 			//	return false;
