@@ -23,8 +23,8 @@ public static class DisplayFusionFunction
     private const uint RESOLUTION_4K_HEIGHT = 2160;
 
     private static bool enableDebugPrints = true;
-    private static bool debugPrint = false;
-    private static bool debugPrintStartStop = false;
+    private static bool debugPrintDoMinMax = enableDebugPrints && false;
+    private static bool debugPrintStartStop = enableDebugPrints && false;
     private static bool debugPrintFindMonitorId = enableDebugPrints && false;
 
 
@@ -70,7 +70,7 @@ public static class DisplayFusionFunction
         foreach (IntPtr window in GetFilteredWindows(monitorId))
         {
             // minimize the window
-            if (debugPrint) MessageBox.Show($"minimizing {BFS.Window.GetText(window)}");
+            if (debugPrintDoMinMax) MessageBox.Show($"minimizing window {BFS.Window.GetText(window)}");
             BFS.Window.Minimize(window);
 
             // add the window to the list of windows
@@ -104,6 +104,7 @@ public static class DisplayFusionFunction
                 continue;
 
             // restore the window
+            if (debugPrintDoMinMax) MessageBox.Show($"maximizing window {BFS.Window.GetText(new IntPtr(windowHandleValue))}");
             BFS.Window.Restore(new IntPtr(windowHandleValue));
         }
 
@@ -167,7 +168,7 @@ public static class DisplayFusionFunction
             Rectangle windowRect = WindowUtils.GetBounds(windowHandle);
             if (windowRect.Width <= 0 || windowRect.Height <= 0)
             {
-                MessageBox.Show($"Filtered out windows wrong size (w{windowRect.Width}, h{windowRect.Height}. classname: {classname}, text: {text})");
+                MessageBox.Show($"Filtered out windows wrong size (w{windowRect.Width}, h{windowRect.Height}). classname: {classname}, text: {text})");
                 return false;
             }
 
