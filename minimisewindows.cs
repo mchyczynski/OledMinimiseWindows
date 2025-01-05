@@ -51,7 +51,10 @@ public static class DisplayFusionFunction
 			   classname.StartsWith("Shell_InputSwitchTopLevelWindow") || // language swich in taskbar
 			   classname.StartsWith("Windows.UI.Core.CoreWindow") ||  // Start and Search windows
 			   classname.StartsWith("Progman") || // Program Manager
-			   classname.StartsWith("SizeTipClass") ) // When resizing
+			   classname.StartsWith("SizeTipClass") || // When resizing
+               classname.StartsWith("DF", StringComparison.Ordinal) ||
+               classname.Equals("WorkerW", StringComparison.Ordinal) ||
+               classname.Equals("SearchPane", StringComparison.Ordinal))
 			{
 				return false;
 			}
@@ -123,24 +126,8 @@ public static class DisplayFusionFunction
 			//loop through all the visible windows on the cursor monitor
 			foreach(IntPtr window in getFilteredWindows(monitorId))
 			{
-				string text = BFS.Window.GetText(window);
-				
-				//skip any special DisplayFusion window (taskbar, titlebar buttons)
-				//skip special explorer.exe windows (icons, search)
-				if(BFS.Window.GetClass(window).StartsWith("DF", StringComparison.Ordinal) ||
-					BFS.Window.GetClass(window).Equals("WorkerW", StringComparison.Ordinal) ||
-					BFS.Window.GetClass(window).Equals("SearchPane", StringComparison.Ordinal))
-				{
-					if(debugPrint) MessageBox.Show($"skipping window {text}");
-					continue;
-				}
-				else
-				{
-					if(debugPrint) MessageBox.Show($"checking window {text}");
-				}
-				
 				//minimize the window
-				if(debugPrint) MessageBox.Show($"minimizing {text}");
+				if(debugPrint) MessageBox.Show($"minimizing {BFS.Window.GetText(window)}");
 				BFS.Window.Minimize(window);
 				
 				//add the window to the list of windows
