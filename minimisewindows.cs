@@ -26,6 +26,8 @@ public static class DisplayFusionFunction
     private static bool debugPrintDoMinMax = enableDebugPrints && false;
     private static bool debugPrintStartStop = enableDebugPrints && false;
     private static bool debugPrintFindMonitorId = enableDebugPrints && false;
+    private static bool debugPrintNoMonitorFound = enableDebugPrints && true;
+    private static bool debugWindowFiltering = enableDebugPrints && false;
 
 
 
@@ -41,11 +43,23 @@ public static class DisplayFusionFunction
     {
         if (ShouldMinimize())
         {
-            MinimizeWindows();
+            int minimizedCount = MinimizeWindows();
+
+            // maximize windows when there was nothing to minimze
+            if(minimizedCount < 1)
+            {
+                MaximizeWindows(true);
+            }
         }
         else
         {
-            MaximizeWindows();
+            int maximizedCount = MaximizeWindows(false);
+
+            // minimize windows when there was nothing to restore
+            if (maximizedCount < 1)
+            {
+                MinimizeWindows();
+            }
         }
     }
 
@@ -57,7 +71,7 @@ public static class DisplayFusionFunction
         return (setting.Length == 0) || (setting.Equals(MinimizedState, StringComparison.Ordinal));
     }
 
-    public static void MinimizeWindows()
+    public static int MinimizeWindows()
     {
         if (debugPrintStartStop) MessageBox.Show("start MIN");
         // this will store the windows that we are minimizing so we can restore them later
@@ -66,15 +80,28 @@ public static class DisplayFusionFunction
         // get monitor ID of OLED monitor (assumption it is the only 4k monitor in the system)
         uint monitorId = GetOledMonitorID();
 
+        // get windows to be minimized
+        IntPtr[] windowsToMinimize = GetFilteredWindows(monitorId);
+
+        int minimizedWindowsCount = 0;
         // loop through all the visible windows on the cursor monitor
-        foreach (IntPtr window in GetFilteredWindows(monitorId))
+        foreach (IntPtr window in windowsToMinimize)
         {
             // minimize the window
-            if (debugPrintDoMinMax) MessageBox.Show($"minimizing window {BFS.Window.GetText(window)}");
-            BFS.Window.Minimize(window);
+            if(!BFS.Window.IsMinimized(window))
+            {
+                if (debugPrintDoMinMax) MessageBox.Show($"minimizing window {BFS.Window.GetText(window)}");
+                BFS.Window.Minimize(window);
+                minimizedWindowsCount += 1;
 
-            // add the window to the list of windows
-            minimizedWindows += window.ToInt64().ToString() + "|";
+                // add the window to the list of windows
+                minimizedWindows += window.ToInt64().ToString() + "|";
+            }
+            else
+            {
+                if (debugPrintDoMinMax) MessageBox.Show($"already minimized window {BFS.Window.GetText(window)}");
+            }
+
         }
 
         // save the list of windows we minimized
@@ -83,10 +110,12 @@ public static class DisplayFusionFunction
         // set the script state to NormalizeState
         BFS.ScriptSettings.WriteValue(ScriptStateSetting, NormalizeState);
 
-        if (debugPrintStartStop) MessageBox.Show("finished MIN");
+        if (debugPrintStartStop) MessageBox.Show($"finished MIN (minimized {minimizedWindowsCount}/{windowsToMinimize.Length} windows)");
+        
+        return minimizedWindowsCount;
     }
 
-    public static void MaximizeWindows()
+    public static int MaximizeWindows(bool forceAll)
     {
         if (debugPrintStartStop) MessageBox.Show("start MAX");
 
@@ -94,18 +123,45 @@ public static class DisplayFusionFunction
         // get the windows that we minimized previously
         string windows = BFS.ScriptSettings.ReadValue(MinimizedWindowsSetting);
 
-        // loop through each setting
-        foreach (string window in windows.Split(new char[] { '|' }, StringSplitOptions.RemoveEmptyEntries))
+        // get windows to be maximized
+        List<IntPtr> windowsToMaximize = new List<IntPtr>();
+        if(forceAll) // maximize all windows on OLED monitor
         {
-            // try to turn the string into a long value
-            // if we can't convert it, go to the next setting
-            long windowHandleValue;
-            if (!Int64.TryParse(window, out windowHandleValue))
-                continue;
+            // get monitor ID of OLED monitor (assumption it is the only 4k monitor in the system)
+            windowsToMaximize = GetFilteredWindows(GetOledMonitorID(), true).ToList();
+        }
+        else // only maximize windows previously minimized
+        {
+            string[] windowsToMaximizeStrings = windows.Split(new char[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (string window in windowsToMaximizeStrings)
+            {
+                // try to turn the string into a long value
+                // if we can't convert it, go to the next setting
+                long windowHandleValue;
+                if (!Int64.TryParse(window, out windowHandleValue))
+                    continue;
+                
+               windowsToMaximize.Add(new IntPtr(windowHandleValue));
+            }
+        }
+
+        int restoredWindowsCount = 0;
+        // loop through each setting
+        foreach (IntPtr windowHandle in windowsToMaximize)
+        {
+
 
             // restore the window
-            if (debugPrintDoMinMax) MessageBox.Show($"maximizing window {BFS.Window.GetText(new IntPtr(windowHandleValue))}");
-            BFS.Window.Restore(new IntPtr(windowHandleValue));
+            if(BFS.Window.IsMinimized(windowHandle))
+            {
+                if (debugPrintDoMinMax) MessageBox.Show($"maximizing window {BFS.Window.GetText(new IntPtr(windowHandle))}");
+                BFS.Window.Restore(windowHandle);
+                restoredWindowsCount += 1;
+            }
+            else 
+            {
+                if (debugPrintDoMinMax) MessageBox.Show($"already restored window {BFS.Window.GetText(new IntPtr(windowHandle))}");
+            }
         }
 
         // clear the windows that we saved
@@ -113,7 +169,9 @@ public static class DisplayFusionFunction
 
         // set the script to MinimizedState
         BFS.ScriptSettings.WriteValue(ScriptStateSetting, MinimizedState);
-        if (debugPrintStartStop) MessageBox.Show("finished MAX");
+        if (debugPrintStartStop) MessageBox.Show($"finished MAX (maximized {restoredWindowsCount}/{windowsToMaximize.Count} windows)");
+
+        return restoredWindowsCount;
     }
 
     public static uint GetOledMonitorID()
@@ -132,15 +190,42 @@ public static class DisplayFusionFunction
         return UInt32.MaxValue;
     }
 
-    public static IntPtr[] GetFilteredWindows(uint monitorId)
+    // todo refactor separate func only minimized
+    public static IntPtr[] GetFilteredWindows(uint monitorId, bool includeMinimized = false)
     {
-        IntPtr[] allWindows = BFS.Window.GetVisibleWindowHandlesByMonitor(monitorId);
+        IntPtr[] allWindows = {};
+        
+        if(includeMinimized)
+        {
+			allWindows = BFS.Window.GetVisibleAndMinimizedWindowHandles().Where(windowHandle => {
+                if(!BFS.Window.IsMinimized(windowHandle)) return false;
+
+				Rectangle currentWindowMonitorBounds = WindowUtils.GetMonitorBoundsFromWindow(windowHandle);
+
+				if (currentWindowMonitorBounds.Width != RESOLUTION_4K_WIDTH || 
+					currentWindowMonitorBounds.Height != RESOLUTION_4K_HEIGHT)
+				{
+                    // todo remove??
+                    string text = BFS.Window.GetText(windowHandle);
+                    Rectangle windowRect = WindowUtils.GetBounds(windowHandle);
+                    string classname = BFS.Window.GetClass(windowHandle);                    
+					if (debugWindowFiltering) MessageBox.Show($"Filtering wrong monitor\n\ntext:{text}\n\nclass:{classname}\n\nsize:{windowRect.ToString()} monitor bounds:w{currentWindowMonitorBounds.Width}h{currentWindowMonitorBounds.Height}");
+					return false;
+				}  
+                return true;
+            }).ToArray();
+
+        }
+        else
+        {
+            allWindows = BFS.Window.GetVisibleWindowHandlesByMonitor(monitorId);
+        }
 
         IntPtr[] filteredWindows = allWindows.Where(windowHandle =>
         {
 
             // Ignore already minimized windows
-            if (BFS.Window.IsMinimized(windowHandle))
+            if (BFS.Window.IsMinimized(windowHandle) && !includeMinimized)
             {
                 return false;
             }
@@ -178,7 +263,6 @@ public static class DisplayFusionFunction
         return filteredWindows;
     }
 
-
     public static class WindowUtils
     {
         [DllImport("user32.dll", SetLastError = true)]
@@ -204,6 +288,12 @@ public static class DisplayFusionFunction
         [DllImport(@"dwmapi.dll")]
         private static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out RECT pvAttribute, int cbAttribute);
 
+        [DllImport("user32.dll")]
+        private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+
         [Serializable, StructLayout(LayoutKind.Sequential)]
         public struct RECT
         {
@@ -222,6 +312,15 @@ public static class DisplayFusionFunction
             }
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MONITORINFO
+        {
+            public uint cbSize;
+            public RECT rcMonitor; // The monitor bounds
+            public RECT rcWork;    // The work area
+            public uint dwFlags;   // Monitor flags
+        }
+        
         private static readonly IntPtr HWND_TOP = new IntPtr(0);
         private static readonly uint SWP_NOSIZE = 0x0001;
         private static readonly uint SWP_NOMOVE = 0x0002;
@@ -233,6 +332,7 @@ public static class DisplayFusionFunction
         private static readonly uint RDW_ALLCHILDREN = 0x0080;
         private static readonly uint RDW_UPDATENOW = 0x0100;
         private static readonly int DWMWA_EXTENDED_FRAME_BOUNDS = 0x9;
+        private static readonly uint MONITOR_DEFAULTTONEAREST = 2;
 
 
         private static bool GetRectangleExcludingShadow(IntPtr handle, out RECT rect)
@@ -379,6 +479,39 @@ public static class DisplayFusionFunction
 
                 MessageBox.Show($"ERROR InvalidateRectangle windows API: {errorCode}\n\ntext: |{text}|\n\nrect: {windowRectangle.ToString()}");
             }
+        }
+
+        public static Rectangle GetMonitorBoundsFromWindow(IntPtr windowHandle)
+		{
+			IntPtr monitorHandle = MonitorFromWindow(windowHandle, MONITOR_DEFAULTTONEAREST);
+
+            if (monitorHandle != IntPtr.Zero)
+            {
+                Rectangle bounds = GetMonitorBounds(monitorHandle);
+                // MessageBox.Show($"Monitor Bounds: Left={bounds.Left}, Top={bounds.Top}, Right={bounds.Right}, Bottom={bounds.Bottom}");
+                return bounds;
+            }
+            else
+            {
+                MessageBox.Show("Error in GetMonitorBoundsFromWindow! Failed to determine the monitor.");
+            }
+            return default;
+		}
+
+        private static Rectangle GetMonitorBounds(IntPtr monitorHandle)
+        {
+            MONITORINFO monitorInfo = new MONITORINFO();
+            monitorInfo.cbSize = (uint)Marshal.SizeOf(typeof(MONITORINFO));
+
+            if (GetMonitorInfo(monitorHandle, ref monitorInfo))
+            {
+                return monitorInfo.rcMonitor.ToRectangle();
+            }
+            else
+            {
+                MessageBox.Show("ERROR in GetMonitorBounds! Failed to retrieve monitor information.");
+            }
+            return default;
         }
     } // WindowUtils
 }
