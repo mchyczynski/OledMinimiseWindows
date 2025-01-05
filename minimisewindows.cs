@@ -225,7 +225,14 @@ public static class DisplayFusionFunction
     {
         // Ignore windows based on classname blacklist
         string classname = BFS.Window.GetClass(windowHandle);
-        if (classnameBlacklist.Exists(blacklistItem => classname.StartsWith(blacklistItem, StringComparison.Ordinal)))
+        if (classnameBlacklist.Exists(blacklistItem => {
+                if(classname.StartsWith(blacklistItem, StringComparison.Ordinal))
+                {
+                    //MessageBox.Show($"Ignored bacause of class: {classname}|{blacklistItem}");
+                    return true;
+                }
+                return false;
+             }))
         {
             return false;
         }
@@ -234,11 +241,19 @@ public static class DisplayFusionFunction
         string text = BFS.Window.GetText(windowHandle);
         if (string.IsNullOrEmpty(text))
         {
+            // MessageBox.Show($"Ignored bacause of empty text");
             return false;
         }
 
         // Ignore windows based on text blacklist 
-        if (textBlacklist.Exists(blacklistItem => text.StartsWith(blacklistItem, StringComparison.Ordinal)))
+        if (textBlacklist.Exists(blacklistItem => {
+                if(text.Equals(blacklistItem, StringComparison.Ordinal))
+                {
+                    MessageBox.Show($"Ignored bacause of text: {text}|{blacklistItem}|");
+                    return true;
+                }
+                return false;
+             }))
         {
             return false;
         }
