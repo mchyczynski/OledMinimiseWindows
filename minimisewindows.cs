@@ -12,12 +12,6 @@ using System.Windows.Forms;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 	
-// The 'windowHandle' parameter will contain the window handle for the:
-//   - Active window when run by hotkey
-//   - Window Location target when run by a Window Location rule
-//   - TitleBar Button owner when run by a TitleBar Button
-//   - Jump List owner when run from a Taskbar Jump List
-//   - Currently focused window if none of these match
 public static class DisplayFusionFunction
 {
 	private const string ScriptStateSetting = "CursorMonitorScriptState";
@@ -36,11 +30,9 @@ public static class DisplayFusionFunction
 	public static IntPtr[] getFilteredWindows(uint monitorId)
 	{
 		IntPtr[] allWindows = BFS.Window.GetVisibleWindowHandlesByMonitor(monitorId);
-		//IntPtr[] allWindows = BFS.Window.GetVisibleAndMinimizedWindowHandles();
 			
 		IntPtr[] filteredWindows = allWindows.Where(windowHandle => {
 
-			string text = BFS.Window.GetText(windowHandle);
 			string classname = BFS.Window.GetClass(windowHandle);
 			//Rectangle windowRect = WindowUtils.GetBounds(windowHandle);
 
@@ -64,6 +56,7 @@ public static class DisplayFusionFunction
 				return false;
 			}
 
+			string text = BFS.Window.GetText(windowHandle);
 			if (string.IsNullOrEmpty(text) 
 			    || text == "Program Manager" // also class Progman
 			    || text == "Volume Mixer" // can be moved but prefer not to
@@ -88,6 +81,7 @@ public static class DisplayFusionFunction
 
 			return true;
 		}).ToArray();
+
 		return filteredWindows;
 	}
 
@@ -109,11 +103,11 @@ public static class DisplayFusionFunction
 	
 	public static void Run(IntPtr windowHandle)
 	{
-		//check to see if we are minimizing 
+		// check to see if we are minimizing 
 		if(IsScriptInMinimizeState())
 		{
-			if(debugPrintStartStop) MessageBox.Show("minimize");
-			//this will store the windows that we are minimizing so we can restore them later
+			if(debugPrintStartStop) MessageBox.Show("start MIN");
+			// this will store the windows that we are minimizing so we can restore them later
 			string minimizedWindows = "";
 			
 			// get the monitor that the cursor is on
@@ -123,58 +117,56 @@ public static class DisplayFusionFunction
             uint monitorId = GetOledMonitorID();
 
 
-			//loop through all the visible windows on the cursor monitor
+			// loop through all the visible windows on the cursor monitor
 			foreach(IntPtr window in getFilteredWindows(monitorId))
 			{
-				//minimize the window
+				// minimize the window
 				if(debugPrint) MessageBox.Show($"minimizing {BFS.Window.GetText(window)}");
 				BFS.Window.Minimize(window);
 				
-				//add the window to the list of windows
+				// add the window to the list of windows
 				minimizedWindows += window.ToInt64().ToString() + "|";
 			}
 			
-			//save the list of windows we minimized
+			// save the list of windows we minimized
 			BFS.ScriptSettings.WriteValue(MinimizedWindowsSetting, minimizedWindows);
 			
-			//set the script state to NormalizeState
+			// set the script state to NormalizeState
 			BFS.ScriptSettings.WriteValue(ScriptStateSetting, NormalizeState);
 			
-			//exit the script
 			if(debugPrintStartStop) MessageBox.Show("finished MIN");
-			return;
 		}
 		else
 		{
-			if(debugPrintStartStop) MessageBox.Show("maximize");
+			if(debugPrintStartStop) MessageBox.Show("start MAX");
+		
+            // we are in the normalize window state
+            // get the windows that we minimized previously
+            string windows = BFS.ScriptSettings.ReadValue(MinimizedWindowsSetting);
+            
+            // loop through each setting
+            foreach(string window in windows.Split(new char[]{'|'}, StringSplitOptions.RemoveEmptyEntries))
+            {
+                // try to turn the string into a long value
+                // if we can't convert it, go to the next setting
+                long windowHandleValue;
+                if(!Int64.TryParse(window, out windowHandleValue))
+                    continue;
+                    
+                // restore the window
+                BFS.Window.Restore(new IntPtr(windowHandleValue));
+            }
+            
+            // clear the windows that we saved
+            BFS.ScriptSettings.WriteValue(MinimizedWindowsSetting, string.Empty);
+            
+            // set the script to MinimizedState
+            BFS.ScriptSettings.WriteValue(ScriptStateSetting, MinimizedState);
+            if(debugPrintStartStop) MessageBox.Show("finished MAX");
 		}
-		
-		//if we got here, we are in the normalize window state
-		//get the windows that we minimized previously
-		string windows = BFS.ScriptSettings.ReadValue(MinimizedWindowsSetting);
-		
-		//loop through each setting
-		foreach(string window in windows.Split(new char[]{'|'}, StringSplitOptions.RemoveEmptyEntries))
-		{
-			//try to turn the string into a long value
-			//if we can't convert it, go to the next setting
-			long windowHandleValue;
-			if(!Int64.TryParse(window, out windowHandleValue))
-				continue;
-				
-			//restore the window
-			BFS.Window.Restore(new IntPtr(windowHandleValue));
-		}
-		
-		//clear the windows that we saved
-		BFS.ScriptSettings.WriteValue(MinimizedWindowsSetting, string.Empty);
-		
-		//set the script to MinimizedState
-		BFS.ScriptSettings.WriteValue(ScriptStateSetting, MinimizedState);
-		if(debugPrintStartStop) MessageBox.Show("finished MAAAX");
 	}
 	
-	//script is in minimize state if there is no setting, or if the setting is equal to MinimizedState
+	// script is in minimize state if there is no setting, or if the setting is equal to MinimizedState
 	private static bool IsScriptInMinimizeState()
 	{
 		//return true;
