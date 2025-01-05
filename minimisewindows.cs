@@ -1,6 +1,17 @@
 using System;
+using System.Windows.Forms;
 using System.Drawing;
+using System.Linq; 
 
+using System;
+using System.Text;
+using System.Reflection;
+using System.Linq;
+using System.Drawing;
+using System.Windows.Forms;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+	
 // The 'windowHandle' parameter will contain the window handle for the:
 //   - Active window when run by hotkey
 //   - Window Location target when run by a Window Location rule
@@ -14,30 +25,98 @@ public static class DisplayFusionFunction
 	private const string MinimizedState = "0";
 	private const string NormalizeState = "1";
 	
+	public static bool debufPrint = false;
+	public static bool debufPrintStartStop = false;
+	
+	public static IntPtr[] getFilteredWindows(uint monitorId)
+	{
+		IntPtr[] allWindows = BFS.Window.GetVisibleWindowHandlesByMonitor(monitorId);
+		//IntPtr[] allWindows = BFS.Window.GetVisibleAndMinimizedWindowHandles();
+			
+		IntPtr[] filteredWindows = allWindows.Where(windowHandle => {
+
+			string text = BFS.Window.GetText(windowHandle);
+			string classname = BFS.Window.GetClass(windowHandle);
+			//Rectangle windowRect = WindowUtils.GetBounds(windowHandle);
+
+			if(classname.StartsWith("DFTaskbar") || 
+			   classname.StartsWith("DFTitleBarWindow") ||
+			   classname.StartsWith("Shell_TrayWnd") || 
+			   classname.StartsWith("tooltips") ||
+			   classname.StartsWith("Shell_InputSwitchTopLevelWindow") || // language swich in taskbar
+			   classname.StartsWith("Windows.UI.Core.CoreWindow") ||  // Start and Search windows
+			   classname.StartsWith("Progman") || // Program Manager
+			   classname.StartsWith("SizeTipClass") ) // When resizing
+			{
+				return false;
+			}
+
+			if (BFS.Window.IsMinimized(windowHandle)) // ignore minimized
+			{
+				return false;
+			}
+
+			if (string.IsNullOrEmpty(text) 
+			    || text == "Program Manager" // also class Progman
+			    || text == "Volume Mixer" // can be moved but prefer not to
+			    || text == "Snap Assist"
+			    || text == "Greenshot capture form" // when selecting area to screenshot (also maybe can be filtered out by size of all monitors)
+			    || text == "Battery Information" // also class Windows.UI.Core.CoreWindow
+			    || text == "Date and Time Information" // also class Windows.UI.Core.CoreWindow
+			    || text == "Network Connections" // also class Windows.UI.Core.CoreWindow
+			    || text == "Volume Control" // also class Windows.UI.Core.CoreWindow
+			    || text == "Start" // also class Windows.UI.Core.CoreWindow
+			    || text == "Search" // also class Windows.UI.Core.CoreWindow
+				)
+			{
+				return false;
+			}
+
+			
+			//if (windowRect.Width <= 0 || windowRect.Height <= 0)
+			//{
+			//	return false;
+			//}
+
+			return true;
+		}).ToArray();
+		return filteredWindows;
+	}
+	
 	public static void Run(IntPtr windowHandle)
 	{
 		//check to see if we are minimizing 
 		if(IsScriptInMinimizeState())
 		{
+			if(debufPrintStartStop) MessageBox.Show("minimize");
 			//this will store the windows that we are minimizing so we can restore them later
 			string minimizedWindows = "";
 			
 			//get the monitor that the cursor is on
 			uint monitorId = BFS.Monitor.GetMonitorIDByXY(BFS.Input.GetMousePositionX(), BFS.Input.GetMousePositionY());
-			
+			if(debufPrint) MessageBox.Show("have monitor");
+
 			//loop through all the visible windows on the cursor monitor
-			foreach(IntPtr window in BFS.Window.GetVisibleWindowHandlesByMonitor(monitorId))
+			foreach(IntPtr window in getFilteredWindows(monitorId))
 			{
+				string text = BFS.Window.GetText(window);
+				
 				//skip any special DisplayFusion window (taskbar, titlebar buttons)
 				//skip special explorer.exe windows (icons, search)
 				if(BFS.Window.GetClass(window).StartsWith("DF", StringComparison.Ordinal) ||
 					BFS.Window.GetClass(window).Equals("WorkerW", StringComparison.Ordinal) ||
 					BFS.Window.GetClass(window).Equals("SearchPane", StringComparison.Ordinal))
 				{
-						continue;
+					if(debufPrint) MessageBox.Show($"skipping window {text}");
+					continue;
+				}
+				else
+				{
+					if(debufPrint) MessageBox.Show($"checking window {text}");
 				}
 				
 				//minimize the window
+				if(debufPrint) MessageBox.Show($"minimizing {text}");
 				BFS.Window.Minimize(window);
 				
 				//add the window to the list of windows
@@ -51,7 +130,12 @@ public static class DisplayFusionFunction
 			BFS.ScriptSettings.WriteValue(ScriptStateSetting, NormalizeState);
 			
 			//exit the script
+			if(debufPrintStartStop) MessageBox.Show("finished MIN");
 			return;
+		}
+		else
+		{
+			if(debufPrintStartStop) MessageBox.Show("maximize");
 		}
 		
 		//if we got here, we are in the normalize window state
@@ -76,11 +160,13 @@ public static class DisplayFusionFunction
 		
 		//set the script to MinimizedState
 		BFS.ScriptSettings.WriteValue(ScriptStateSetting, MinimizedState);
+		if(debufPrintStartStop) MessageBox.Show("finished MAAAX");
 	}
 	
 	//script is in minimize state if there is no setting, or if the setting is equal to MinimizedState
 	private static bool IsScriptInMinimizeState()
 	{
+		//return true;
 		string setting = BFS.ScriptSettings.ReadValue(ScriptStateSetting);
 		return (setting.Length == 0) || (setting.Equals(MinimizedState, StringComparison.Ordinal));
 	}
