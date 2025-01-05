@@ -97,68 +97,78 @@ public static class DisplayFusionFunction
         MessageBox.Show($"ERROR! did not find monitor with 4k resolution");            
         return UInt32.MaxValue;
     }
+
+    public static void MinimizeWindows()
+    {
+        if(debugPrintStartStop) MessageBox.Show("start MIN");
+        // this will store the windows that we are minimizing so we can restore them later
+        string minimizedWindows = "";
+        
+        // get the monitor that the cursor is on
+        // uint monitorId = BFS.Monitor.GetMonitorIDByXY(BFS.Input.GetMousePositionX(), BFS.Input.GetMousePositionY());
+        
+        // get monitor ID of OLED monitor (assumption it is the only 4k monitor in the system)
+        uint monitorId = GetOledMonitorID();
+
+        // loop through all the visible windows on the cursor monitor
+        foreach(IntPtr window in getFilteredWindows(monitorId))
+        {
+            // minimize the window
+            if(debugPrint) MessageBox.Show($"minimizing {BFS.Window.GetText(window)}");
+            BFS.Window.Minimize(window);
+            
+            // add the window to the list of windows
+            minimizedWindows += window.ToInt64().ToString() + "|";
+        }
+        
+        // save the list of windows we minimized
+        BFS.ScriptSettings.WriteValue(MinimizedWindowsSetting, minimizedWindows);
+        
+        // set the script state to NormalizeState
+        BFS.ScriptSettings.WriteValue(ScriptStateSetting, NormalizeState);
+        
+        if(debugPrintStartStop) MessageBox.Show("finished MIN");
+    }
+
+    public static void MaximizeWindows()
+    {
+        if(debugPrintStartStop) MessageBox.Show("start MAX");
+    
+        // we are in the normalize window state
+        // get the windows that we minimized previously
+        string windows = BFS.ScriptSettings.ReadValue(MinimizedWindowsSetting);
+        
+        // loop through each setting
+        foreach(string window in windows.Split(new char[]{'|'}, StringSplitOptions.RemoveEmptyEntries))
+        {
+            // try to turn the string into a long value
+            // if we can't convert it, go to the next setting
+            long windowHandleValue;
+            if(!Int64.TryParse(window, out windowHandleValue))
+                continue;
+                
+            // restore the window
+            BFS.Window.Restore(new IntPtr(windowHandleValue));
+        }
+        
+        // clear the windows that we saved
+        BFS.ScriptSettings.WriteValue(MinimizedWindowsSetting, string.Empty);
+        
+        // set the script to MinimizedState
+        BFS.ScriptSettings.WriteValue(ScriptStateSetting, MinimizedState);
+        if(debugPrintStartStop) MessageBox.Show("finished MAX");
+    }
 	
 	public static void Run(IntPtr windowHandle)
 	{
 		// check to see if we are minimizing 
 		if(IsScriptInMinimizeState())
 		{
-			if(debugPrintStartStop) MessageBox.Show("start MIN");
-			// this will store the windows that we are minimizing so we can restore them later
-			string minimizedWindows = "";
-			
-			// get the monitor that the cursor is on
-			// uint monitorId = BFS.Monitor.GetMonitorIDByXY(BFS.Input.GetMousePositionX(), BFS.Input.GetMousePositionY());
-           
-            // get monitor ID of OLED monitor (assumption it is the only 4k monitor in the system)
-            uint monitorId = GetOledMonitorID();
-
-			// loop through all the visible windows on the cursor monitor
-			foreach(IntPtr window in getFilteredWindows(monitorId))
-			{
-				// minimize the window
-				if(debugPrint) MessageBox.Show($"minimizing {BFS.Window.GetText(window)}");
-				BFS.Window.Minimize(window);
-				
-				// add the window to the list of windows
-				minimizedWindows += window.ToInt64().ToString() + "|";
-			}
-			
-			// save the list of windows we minimized
-			BFS.ScriptSettings.WriteValue(MinimizedWindowsSetting, minimizedWindows);
-			
-			// set the script state to NormalizeState
-			BFS.ScriptSettings.WriteValue(ScriptStateSetting, NormalizeState);
-			
-			if(debugPrintStartStop) MessageBox.Show("finished MIN");
+            MinimizeWindows();
 		}
 		else
 		{
-			if(debugPrintStartStop) MessageBox.Show("start MAX");
-		
-            // we are in the normalize window state
-            // get the windows that we minimized previously
-            string windows = BFS.ScriptSettings.ReadValue(MinimizedWindowsSetting);
-            
-            // loop through each setting
-            foreach(string window in windows.Split(new char[]{'|'}, StringSplitOptions.RemoveEmptyEntries))
-            {
-                // try to turn the string into a long value
-                // if we can't convert it, go to the next setting
-                long windowHandleValue;
-                if(!Int64.TryParse(window, out windowHandleValue))
-                    continue;
-                    
-                // restore the window
-                BFS.Window.Restore(new IntPtr(windowHandleValue));
-            }
-            
-            // clear the windows that we saved
-            BFS.ScriptSettings.WriteValue(MinimizedWindowsSetting, string.Empty);
-            
-            // set the script to MinimizedState
-            BFS.ScriptSettings.WriteValue(ScriptStateSetting, MinimizedState);
-            if(debugPrintStartStop) MessageBox.Show("finished MAX");
+            MaximizeWindows();
 		}
 	}
 	
