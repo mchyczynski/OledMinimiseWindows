@@ -16,14 +16,19 @@ public static class DisplayFusionFunction
 {
     private const string ScriptStateSetting = "CursorMonitorScriptState";
     private const string MinimizedWindowsSetting = "CursorMonitorMinimizedWindows";
+    private const string MousePositionXSetting = "MousePositionXSetting";
+    private const string MousePositionYSetting = "MousePositionYSetting";
     private const string MinimizedState = "0";
     private const string NormalizeState = "1";
 
     private static readonly uint RESOLUTION_4K_WIDTH = 3840;
     private static readonly uint RESOLUTION_4K_HEIGHT = 2160;
 
-    private static readonly uint RESOLUTION_2K_WIDTH = 2160;
+    private static readonly uint RESOLUTION_2K_WIDTH = 2560;
     private static readonly uint RESOLUTION_2K_HEIGHT = 1440;
+    private static readonly int MOUSE_HIDE_TARGET_X = (int)(RESOLUTION_2K_WIDTH / 2);
+    private static readonly int MOUSE_HIDE_TARGET_Y = (int)(RESOLUTION_2K_HEIGHT / 2);
+    private static readonly uint MOUSE_RESTORE_THRESHOLD = 200;
 
     private static bool enableMouseMove = true;
     private static bool enableDebugPrints = true;
@@ -32,7 +37,7 @@ public static class DisplayFusionFunction
     private static bool debugPrintFindMonitorId = enableDebugPrints && false;
     private static bool debugPrintNoMonitorFound = enableDebugPrints && true;
     private static bool debugWindowFiltering = enableDebugPrints && false;
-    private static bool debugPrintMoveCursor = enableDebugPrints && true;
+    private static bool debugPrintMoveCursor = enableDebugPrints && false;
 
 
 
@@ -109,8 +114,8 @@ public static class DisplayFusionFunction
 
         }
 
-        // Hide mouse cursor to primary monitor if enabled
-        if (enableMouseMove) HandleMouseOut();
+        // Hide mouse cursor to primary monitor if enabled and at leas one window was minimized
+        if (enableMouseMove && (minimizedWindowsCount > 0)) HandleMouseOut();
 
         // save the list of windows we minimized
         BFS.ScriptSettings.WriteValue(MinimizedWindowsSetting, minimizedWindows);
@@ -160,8 +165,6 @@ public static class DisplayFusionFunction
         // loop through each setting
         foreach (IntPtr windowHandle in windowsToRestore)
         {
-
-
             // restore the window
             if(BFS.Window.IsMinimized(windowHandle))
             {
@@ -187,25 +190,74 @@ public static class DisplayFusionFunction
 
     public static void HandleMouseOut()
     {
-        // Check mouse is on 4K OLED monitor and shoudl be moved
+        // Check if mouse is on 4K OLED monitor so it should be moved
+        int mouseX = BFS.Input.GetMousePositionX();
+        int mouseY = BFS.Input.GetMousePositionY();
 
-        // Store mouse position before moving it
+        // BFS.Monitor.GetMonitorBoundsByMouseCursor()
+        Rectangle mouseMonitorBounds = BFS.Monitor.GetMonitorBoundsByXY(mouseX, mouseY);
 
-        // Move cursor to primary monitor
-        BFS.Input.SetMousePosition((int)(RESOLUTION_2K_WIDTH / 2), (int)(RESOLUTION_2K_HEIGHT / 2));
+        // Mouse on monitor 4K OLED
+        if(mouseMonitorBounds.Width == RESOLUTION_4K_WIDTH && mouseMonitorBounds.Height == RESOLUTION_4K_HEIGHT)
+        {
+            // Store mouse position before moving it
+            BFS.ScriptSettings.WriteValueInt(MousePositionXSetting, mouseX);
+            BFS.ScriptSettings.WriteValueInt(MousePositionYSetting, mouseY);
 
-        // Save flag mouse was moved?? or only coordinates are enough?
+            // Move cursor to primary monitor
+            BFS.Input.SetMousePosition(MOUSE_HIDE_TARGET_X, MOUSE_HIDE_TARGET_Y);
+            if (debugPrintMoveCursor) MessageBox.Show($"HandleMouseOut: hiding mouse from mouseOldX({mouseX}) mouseOldY({mouseY})");
+        }
+        else // Mouse on other monitor
+        {
+            // Clear stored mouse position
+            BFS.ScriptSettings.DeleteValue(MousePositionXSetting);
+            BFS.ScriptSettings.DeleteValue(MousePositionYSetting);
+            if (debugPrintMoveCursor) MessageBox.Show($"HandleMouseOut: skip hiding mouse because not on 4k OLED monitor");
+        }
     }
 
     public static void HandleMouseBack()
     {
         // Read old mouse position
+        int mouseOldX = BFS.ScriptSettings.ReadValueInt(MousePositionXSetting);
+        int mouseOldY = BFS.ScriptSettings.ReadValueInt(MousePositionYSetting);
 
         // Abort when no stored position
+        if(mouseOldX == 0 && mouseOldY == 0)
+        {
+            // Ignore fact that mouse may actually be saved at 0,0 pos as a minor problem
+            return;
+        }
 
-        // Check if current position differs a lot (check it was moved)
+        // Read currect mouse position
+        int mouseX = BFS.Input.GetMousePositionX();
+        int mouseY = BFS.Input.GetMousePositionY();
 
-        // Restore mouse position if not moved
+        // Check if mouse was moved after hiding it from 4k OLED monitor 
+        // Which is to check if current position differs enough from mouse hide position
+        int diffX = Math.Abs(mouseX - MOUSE_HIDE_TARGET_X);
+        int diffY = Math.Abs(mouseY - MOUSE_HIDE_TARGET_Y);
+
+        bool wasMoved = diffX > MOUSE_RESTORE_THRESHOLD || diffY > MOUSE_RESTORE_THRESHOLD;
+        if (!wasMoved)
+        {
+            // Restore mouse position because it wasn't moved enough
+            if (debugPrintMoveCursor) MessageBox.Show($"HandleMouseBack: restoring to mouseOldX({mouseOldX}) mouseOldY({mouseOldY})");
+            BFS.Input.SetMousePosition(mouseOldX, mouseOldY);
+        }
+        else 
+        {
+            if (debugPrintMoveCursor)  MessageBox.Show($"HandleMouseBack: skiping restoring mouse was moved too much:\n" + 
+                                                       $"mouseOldX({mouseOldX}) mouseOldY({mouseOldY})\n" + 
+                                                       $"diffX({diffX}) diffY({diffY})\n" +
+                                                       $"mouseX({mouseX}) mouseY({mouseY})\n" +
+                                                       $"hideX({MOUSE_HIDE_TARGET_X}) hideY({MOUSE_HIDE_TARGET_Y})");
+        }
+
+        // Clear stored mouse position
+        BFS.ScriptSettings.DeleteValue(MousePositionXSetting);
+        BFS.ScriptSettings.DeleteValue(MousePositionYSetting);
     }
 
     public static uint GetOledMonitorID()
