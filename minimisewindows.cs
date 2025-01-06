@@ -19,15 +19,20 @@ public static class DisplayFusionFunction
     private const string MinimizedState = "0";
     private const string NormalizeState = "1";
 
-    private const uint RESOLUTION_4K_WIDTH = 3840;
-    private const uint RESOLUTION_4K_HEIGHT = 2160;
+    private static readonly uint RESOLUTION_4K_WIDTH = 3840;
+    private static readonly uint RESOLUTION_4K_HEIGHT = 2160;
 
+    private static readonly uint RESOLUTION_2K_WIDTH = 2160;
+    private static readonly uint RESOLUTION_2K_HEIGHT = 1440;
+
+    private static bool enableMouseMove = true;
     private static bool enableDebugPrints = true;
     private static bool debugPrintDoMinRestore = enableDebugPrints && false;
     private static bool debugPrintStartStop = enableDebugPrints && false;
     private static bool debugPrintFindMonitorId = enableDebugPrints && false;
     private static bool debugPrintNoMonitorFound = enableDebugPrints && true;
     private static bool debugWindowFiltering = enableDebugPrints && false;
+    private static bool debugPrintMoveCursor = enableDebugPrints && true;
 
 
 
@@ -104,6 +109,9 @@ public static class DisplayFusionFunction
 
         }
 
+        // Hide mouse cursor to primary monitor if enabled
+        if (enableMouseMove) HandleMouseOut();
+
         // save the list of windows we minimized
         BFS.ScriptSettings.WriteValue(MinimizedWindowsSetting, minimizedWindows);
 
@@ -122,6 +130,9 @@ public static class DisplayFusionFunction
         // we are in the normalize window state
         // get the windows that we minimized previously
         string windows = BFS.ScriptSettings.ReadValue(MinimizedWindowsSetting);
+
+        // First restore mouse cursor position if enabled
+        if (enableMouseMove) HandleMouseBack();
 
         // get windows to be restored
         List<IntPtr> windowsToRestore = new List<IntPtr>();
@@ -172,6 +183,29 @@ public static class DisplayFusionFunction
         if (debugPrintStartStop) MessageBox.Show($"finished RESTORE (restored {restoredWindowsCount}/{windowsToRestore.Count} windows)");
 
         return restoredWindowsCount;
+    }
+
+    public static void HandleMouseOut()
+    {
+        // Check mouse is on 4K OLED monitor and shoudl be moved
+
+        // Store mouse position before moving it
+
+        // Move cursor to primary monitor
+        BFS.Input.SetMousePosition((int)(RESOLUTION_2K_WIDTH / 2), (int)(RESOLUTION_2K_HEIGHT / 2));
+
+        // Save flag mouse was moved?? or only coordinates are enough?
+    }
+
+    public static void HandleMouseBack()
+    {
+        // Read old mouse position
+
+        // Abort when no stored position
+
+        // Check if current position differs a lot (check it was moved)
+
+        // Restore mouse position if not moved
     }
 
     public static uint GetOledMonitorID()
