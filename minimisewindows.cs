@@ -99,7 +99,7 @@ public static class DisplayFusionFunction
          if (!BFS.Window.IsMinimized(window))
          {
             if (debugPrintDoMinRestore) MessageBox.Show($"minimizing window {BFS.Window.GetText(window)}");
-            BFS.Window.Minimize(window);
+            WindowUtils.MinimizeWindow(window);
             minimizedWindowsCount += 1;
 
             // add the window to the list of windows
@@ -147,6 +147,7 @@ public static class DisplayFusionFunction
       else // only restore windows previously minimized
       {
          string[] windowsToRestoreStrings = windows.Split(new char[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
+         Array.Reverse(windowsToRestoreStrings);
          foreach (string window in windowsToRestoreStrings)
          {
             // try to turn the string into a long value
@@ -167,7 +168,8 @@ public static class DisplayFusionFunction
          if (BFS.Window.IsMinimized(windowHandle))
          {
             if (debugPrintDoMinRestore) MessageBox.Show($"restoring window {BFS.Window.GetText(new IntPtr(windowHandle))}");
-            BFS.Window.Restore(windowHandle);
+            WindowUtils.RestoreWindow(windowHandle);
+            WindowUtils.PushToTop(windowHandle);
             restoredWindowsCount += 1;
          }
          else
@@ -370,6 +372,10 @@ public static class DisplayFusionFunction
    {
       [DllImport("user32.dll", SetLastError = true)]
       [return: MarshalAs(UnmanagedType.Bool)]
+      public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+      [DllImport("user32.dll", SetLastError = true)]
+      [return: MarshalAs(UnmanagedType.Bool)]
       private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags); // including shadow
 
       [DllImport("user32.dll", SetLastError = true)]
@@ -396,6 +402,12 @@ public static class DisplayFusionFunction
 
       [DllImport("user32.dll", SetLastError = true)]
       private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+
+      [DllImport("user32.dll", CharSet = CharSet.Auto)]
+      private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+      [DllImport("user32.dll", CharSet = CharSet.Auto)]
+      private static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
 
       [Serializable, StructLayout(LayoutKind.Sequential)]
       public struct RECT
@@ -424,7 +436,14 @@ public static class DisplayFusionFunction
          public uint dwFlags;   // Monitor flags
       }
 
-      private static readonly IntPtr HWND_TOP = new IntPtr(0);
+      private static readonly int SW_SHOWNORMAL = 1;
+      private static readonly int SW_SHOWMINIMIZED = 2;
+      private static readonly int SW_SHOWNOACTIVATE = 4;
+      private static readonly int SW_SHOW = 5;
+      private static readonly int SW_MINIMIZE = 6;
+      private static readonly int SW_SHOWMINNOACTIVE = 7;
+      private static readonly int SW_SHOWNA = 8;
+      private static readonly int SW_RESTORE = 9;
       private static readonly uint SWP_NOSIZE = 0x0001;
       private static readonly uint SWP_NOMOVE = 0x0002;
       private static readonly uint SWP_NOACTIVATE = 0x0010;
@@ -615,6 +634,28 @@ public static class DisplayFusionFunction
             MessageBox.Show("ERROR in GetMonitorBounds! Failed to retrieve monitor information.");
          }
          return default;
+      }
+
+      public static void MinimizeWindow(IntPtr windowHandle)
+      {
+         // ShowWindow(windowHandle, SW_MINIMIZE); // activates next window than currently minimized
+         // ShowWindow(windowHandle, SW_SHOWMINIMIZED); // activates currently minimized window (doesn't work?)
+         ShowWindow(windowHandle, SW_SHOWMINNOACTIVE); // doesn't activate any window
+      }
+      public static void RestoreWindow(IntPtr windowHandle)
+      {
+         ShowWindow(windowHandle, SW_RESTORE);
+      }
+
+      public static void PushToTop(IntPtr windowHandle)
+      {
+         if (debugPrintDoMinRestore) MessageBox.Show($"pushing\n|{BFS.Window.GetText(windowHandle)}|\non top");
+         bool result = SetForegroundWindow(windowHandle);
+         if (!result)
+         {
+            int errorCode = Marshal.GetLastWin32Error();
+            MessageBox.Show($"SetForegroundWindow error: {errorCode}");
+         }
       }
    } // WindowUtils
 }
