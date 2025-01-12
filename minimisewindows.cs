@@ -511,6 +511,7 @@ public static class DisplayFusionFunction
       {
          if (debugPrintDoMinRestore) MessageBox.Show($"pushing\n|{BFS.Window.GetText(windowHandle)}|\non top");
          bool result = SetForegroundWindow(windowHandle);
+         System.Threading.Thread.Sleep(30);
          if (!result)
          {
             int errorCode = Marshal.GetLastWin32Error();
