@@ -32,7 +32,7 @@ public static class DisplayFusionFunction
    public static string KEY_CTRL = "17";
    public static string KEY_ALT = "18";
 
-   private static readonly bool enableMouseMove = false;
+   private static readonly bool enableMouseMove = true;
    private static readonly bool enableDebugPrints = true;
    private static readonly bool prioritizeMinimizeDefault = true;
    private static readonly bool keepRestoringDefault = true;
@@ -331,6 +331,11 @@ public static class DisplayFusionFunction
    {
       // todo store in settings
       return keepRestoringDefault;
+   }
+
+   public statci bool ShouldForceRestore()
+   {
+
    }
 
    public static IntPtr[] GetFilteredVisibleWindows(uint monitorId)
