@@ -14,8 +14,8 @@ using System.Runtime.InteropServices;
 
 public static class DisplayFusionFunction
 {
-   private const string ScriptStateSetting = "CursorMonitorScriptState";
-   private const string MinimizedWindowsSetting = "CursorMonitorMinimizedWindows";
+   private const string ScriptStateSetting = "OledMinimizerScriptState";
+   private const string MinimizedWindowsListSetting = "OledMinimizerMinimizedWindowsList";
    private const string MousePositionXSetting = "MousePositionXSetting";
    private const string MousePositionYSetting = "MousePositionYSetting";
    private const string RestoredState = "0";
@@ -28,10 +28,14 @@ public static class DisplayFusionFunction
    private static readonly uint RESOLUTION_2K_HEIGHT = 1440;
    private static readonly uint MOUSE_RESTORE_THRESHOLD = 200;
 
+   public static string KEY_SHIFT = "16";
+   public static string KEY_CTRL = "17";
+   public static string KEY_ALT = "18";
+
    private static readonly bool enableMouseMove = false;
    private static readonly bool enableDebugPrints = true;
-   private static readonly bool forceMinimizeDefault = true;
-   private static readonly bool forceRestoreDefault = true;
+   private static readonly bool prioritizeMinimizeDefault = true;
+   private static readonly bool keepRestoringDefault = true;
    private static readonly bool debugPrintDoMinRestore = enableDebugPrints && false;
    private static readonly bool debugPrintStartStop = enableDebugPrints && false;
    private static readonly bool debugPrintFindMonitorId = enableDebugPrints && false;
@@ -75,17 +79,17 @@ public static class DisplayFusionFunction
       {
          // there were windows minimized but there are also manually restored or new windows visible
          // decide if we should restore saved windows or minimize visible ones
-         if (ShouldForceMinimize())
+         if (ShouldPrioritizeMinimize())
          {
-            if (debugPrintDecideMinRestore) MessageBox.Show($"windowsWereMinimized && windowsAreVisible && ShouldForceMinimize");
+            if (debugPrintDecideMinRestore) MessageBox.Show($"windowsWereMinimized && windowsAreVisible && ShouldPrioritizeMinimize");
             int minimizedCount = MinimizeWindows();
             if (minimizedCount < 1) MessageBox.Show($"ERROR no windows were minimized but should be (force)!");
          }
-         else
+         else // don't prioritize minimizing new windows and restore saved ones
          {
-            if (debugPrintDecideMinRestore) MessageBox.Show($"windowsWereMinimized && windowsAreVisible && NOT ShouldForceMinimize");
+            if (debugPrintDecideMinRestore) MessageBox.Show($"windowsWereMinimized && windowsAreVisible && NOT ShouldPrioritizeMinimize");
             int restoredCount = RestoreWindows(false); // try restoring only saved windows
-            if ((restoredCount < 1) && ShouldForceRestore()) // optionally restore all other minimized if saved windows were manually restored
+            if ((restoredCount < 1) && ShouldKeepRestoring()) // optionally restore all other minimized if saved windows were manually restored
             {
                restoredCount = RestoreWindows(true); // restore all windows (not only saved but minimalized manually)
                if (restoredCount < 1) MessageBox.Show($"There is no other windows to restore (todo remove)");
@@ -142,7 +146,7 @@ public static class DisplayFusionFunction
       if (enableMouseMove && (minimizedWindowsCount > 0)) HandleMouseOut();
 
       // save the list of windows that were minimized
-      BFS.ScriptSettings.WriteValue(MinimizedWindowsSetting, minimizedWindows);
+      BFS.ScriptSettings.WriteValue(MinimizedWindowsListSetting, minimizedWindows);
 
       // set the script state to MinimizedState
       BFS.ScriptSettings.WriteValue(ScriptStateSetting, MinimizedState);
@@ -158,7 +162,7 @@ public static class DisplayFusionFunction
 
       // we are in the normalize window state
       // get the windows that we minimized previously
-      string windows = BFS.ScriptSettings.ReadValue(MinimizedWindowsSetting);
+      string windows = BFS.ScriptSettings.ReadValue(MinimizedWindowsListSetting);
 
       // First restore mouse cursor position if enabled
       if (enableMouseMove) HandleMouseBack();
@@ -204,7 +208,7 @@ public static class DisplayFusionFunction
       }
 
       // clear the windows that we saved
-      BFS.ScriptSettings.WriteValue(MinimizedWindowsSetting, string.Empty);
+      BFS.ScriptSettings.WriteValue(MinimizedWindowsListSetting, string.Empty);
 
       // set the script to RestoredState
       BFS.ScriptSettings.WriteValue(ScriptStateSetting, RestoredState);
@@ -317,17 +321,18 @@ public static class DisplayFusionFunction
       return windowsToMinimize.Length;
    }
 
-   public static bool ShouldForceMinimize()
+   public static bool ShouldPrioritizeMinimize()
    {
-      // todo add reading a setting or if some key is pressed
-      return forceMinimizeDefault;
+      // todo store in settings
+      return prioritizeMinimizeDefault;
    }
 
-   public static bool ShouldForceRestore()
+   public static bool ShouldKeepRestoring()
    {
-      // todo add reading a setting or if some key is pressed
-      return forceRestoreDefault;
+      // todo store in settings
+      return keepRestoringDefault;
    }
+
    public static IntPtr[] GetFilteredVisibleWindows(uint monitorId)
    {
       IntPtr[] allWindows = BFS.Window.GetVisibleWindowHandlesByMonitor(monitorId);
