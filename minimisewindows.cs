@@ -373,27 +373,6 @@ public static class DisplayFusionFunction
       [DllImport("user32.dll", SetLastError = true)]
       [return: MarshalAs(UnmanagedType.Bool)]
       public static extern bool SetForegroundWindow(IntPtr hWnd);
-
-      [DllImport("user32.dll", SetLastError = true)]
-      [return: MarshalAs(UnmanagedType.Bool)]
-      private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags); // including shadow
-
-      [DllImport("user32.dll", SetLastError = true)]
-      [return: MarshalAs(UnmanagedType.Bool)]
-      private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect); // including shadow
-
-      [DllImport("user32.dll", SetLastError = true)]
-      [return: MarshalAs(UnmanagedType.Bool)]
-      private static extern bool RedrawWindow(IntPtr hWnd, IntPtr lprcUpdate, IntPtr hrgnUpdate, uint flags);
-
-      [DllImport("user32.dll", SetLastError = true)]
-      [return: MarshalAs(UnmanagedType.Bool)]
-      private static extern bool InvalidateRect(IntPtr hWnd, IntPtr lpRect, bool bErase);
-
-      [DllImport("user32.dll", SetLastError = true)]
-      [return: MarshalAs(UnmanagedType.Bool)]
-      private static extern bool UpdateWindow(IntPtr hWnd);
-
       [DllImport(@"dwmapi.dll")]
       private static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out RECT pvAttribute, int cbAttribute);
 
@@ -405,9 +384,6 @@ public static class DisplayFusionFunction
 
       [DllImport("user32.dll", CharSet = CharSet.Auto)]
       private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-
-      [DllImport("user32.dll", CharSet = CharSet.Auto)]
-      private static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
 
       [Serializable, StructLayout(LayoutKind.Sequential)]
       public struct RECT
@@ -444,19 +420,9 @@ public static class DisplayFusionFunction
       private static readonly int SW_SHOWMINNOACTIVE = 7;
       private static readonly int SW_SHOWNA = 8;
       private static readonly int SW_RESTORE = 9;
-      private static readonly uint SWP_NOSIZE = 0x0001;
-      private static readonly uint SWP_NOMOVE = 0x0002;
-      private static readonly uint SWP_NOACTIVATE = 0x0010;
-      private static readonly uint SWP_NOOWNERZORDER = 0x0200;
-      private static readonly uint SWP_NOZORDER = 0x0004;
-      private static readonly uint SWP_FRAMECHANGED = 0x0020;
-      private static readonly uint RDW_INVALIDATE = 0x0001;
-      private static readonly uint RDW_ALLCHILDREN = 0x0080;
-      private static readonly uint RDW_UPDATENOW = 0x0100;
       private static readonly int DWMWA_EXTENDED_FRAME_BOUNDS = 0x9;
       private static readonly uint MONITOR_DEFAULTTONEAREST = 2;
-
-
+      
       private static bool GetRectangleExcludingShadow(IntPtr handle, out RECT rect)
       {
          var result = DwmGetWindowAttribute(handle, DWMWA_EXTENDED_FRAME_BOUNDS, out rect, Marshal.SizeOf(typeof(RECT)));
@@ -468,71 +434,7 @@ public static class DisplayFusionFunction
 
          return result >= 0;
       }
-      private static Rectangle CompensateForShadow(IntPtr windowHandle, int x, int y, int w, int h)
-      {
-         RECT excludeShadow = new RECT();
-         RECT includeShadow = new RECT();
 
-         if (!GetRectangleExcludingShadow(windowHandle, out excludeShadow))
-         {
-            int errorCode = Marshal.GetLastWin32Error();
-            string text = BFS.Window.GetText(windowHandle);
-            MessageBox.Show($"ERROR CompensateForShadow-GetWindowRectangle windows API: {errorCode}\n\n" +
-                            $"text: |{text}|\n\n" +
-                            $"requested pos: x.{x} y.{y} w.{w} h.{h}");
-         }
-
-         if (!GetWindowRect(windowHandle, out includeShadow)) // including shadow
-         {
-            int errorCode = Marshal.GetLastWin32Error();
-            string text = BFS.Window.GetText(windowHandle);
-            MessageBox.Show($"ERROR CompensateForShadow-GetWindowRect windows API: {errorCode}\n\n" +
-                            $"text: |{text}|\n\n" +
-                            $"requested pos: x.{x} y.{y} w.{w} h.{h}");
-         }
-
-         RECT shadow = new RECT();
-         shadow.Left = Math.Abs(includeShadow.Left - excludeShadow.Left);//+1;
-         shadow.Right = Math.Abs(includeShadow.Right - excludeShadow.Right);
-         shadow.Top = Math.Abs(includeShadow.Top - excludeShadow.Top);// +1;
-         shadow.Bottom = Math.Abs(includeShadow.Bottom - excludeShadow.Bottom);//+1;
-
-         // compensate requested x, y, width and height with shadow
-         Rectangle result = new Rectangle(
-             x - shadow.Left, // windowX
-             y - shadow.Top, // windowY
-             w + shadow.Right + shadow.Left, // windowWidth
-             h + shadow.Bottom + shadow.Top // windowHeight
-         );
-
-         return result;
-      }
-
-      public static void SetLocation(IntPtr windowHandle, int x, int y)
-      {
-         SetSizeAndLocation(windowHandle, x, y, 0, 0);
-      }
-
-      public static void SetSizeAndLocation(IntPtr windowHandle, int x, int y, int w, int h)
-      {
-         Rectangle newPos = CompensateForShadow(windowHandle, x, y, w, h);
-
-         uint flags = SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOZORDER | SWP_FRAMECHANGED;
-
-         if (w == 0 && h == 0)
-         {
-            flags = flags | SWP_NOSIZE;
-         }
-
-         if (!SetWindowPos(windowHandle, windowHandle, newPos.X, newPos.Y, newPos.Width, newPos.Height, flags))
-         {
-            int errorCode = Marshal.GetLastWin32Error();
-            string text = BFS.Window.GetText(windowHandle);
-            MessageBox.Show($"ERROR SetSizeAndLocation-SetWindowPos windows API: {errorCode}\n\n" +
-                            $"text: |{text}|\n\n" +
-                            $"requested pos: x.{x} y.{y} w.{w} h.{h}");
-         }
-      }
       public static Rectangle GetBounds(IntPtr windowHandle)
       {
          int windowX = 0, windowY = 0, windowWidth = 0, windowHeight = 0;
@@ -559,48 +461,6 @@ public static class DisplayFusionFunction
              windowHeight
          );
          return rect;
-      }
-
-      public static void RedrawWindow(IntPtr windowHandle)
-      {
-         bool result = RedrawWindow(windowHandle, IntPtr.Zero, IntPtr.Zero, RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW);
-
-         if (!result)
-         {
-            int errorCode = Marshal.GetLastWin32Error();
-            string text = BFS.Window.GetText(windowHandle);
-            Rectangle windowRectangle = WindowUtils.GetBounds(windowHandle);
-
-            MessageBox.Show($"ERROR RedrawWindow windows API: {errorCode}\n\ntext: |{text}|\n\nrect: {windowRectangle.ToString()}");
-         }
-      }
-
-      public static void ForceUpdateWindow(IntPtr windowHandle)
-      {
-         bool result = UpdateWindow(windowHandle);
-
-         if (!result)
-         {
-            int errorCode = Marshal.GetLastWin32Error();
-            string text = BFS.Window.GetText(windowHandle);
-            Rectangle windowRectangle = WindowUtils.GetBounds(windowHandle);
-
-            MessageBox.Show($"ERROR UpdateWindow windows API: {errorCode}\n\ntext: |{text}|\n\nrect: {windowRectangle.ToString()}");
-         }
-      }
-
-      public static void InvalidateRectangle(IntPtr windowHandle)
-      {
-         bool result = InvalidateRect(windowHandle, IntPtr.Zero, true);
-
-         if (!result)
-         {
-            int errorCode = Marshal.GetLastWin32Error();
-            string text = BFS.Window.GetText(windowHandle);
-            Rectangle windowRectangle = WindowUtils.GetBounds(windowHandle);
-
-            MessageBox.Show($"ERROR InvalidateRectangle windows API: {errorCode}\n\ntext: |{text}|\n\nrect: {windowRectangle.ToString()}");
-         }
       }
 
       public static Rectangle GetMonitorBoundsFromWindow(IntPtr windowHandle)
