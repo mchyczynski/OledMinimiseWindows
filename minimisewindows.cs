@@ -333,9 +333,14 @@ public static class DisplayFusionFunction
       return keepRestoringDefault;
    }
 
-   public statci bool ShouldForceRestore()
+   public static bool ShouldForceRestore()
    {
+      bool keyPressed = BFS.Input.IsMouseDown("1;");
+      // bool keyPressed = BFS.Input.IsKeyDown(KEY_ALT);
+      if (keyPressed) MessageBox.Show($"key is pressed");
+      else MessageBox.Show($"key is NOT pressed");
 
+      return keyPressed;
    }
 
    public static IntPtr[] GetFilteredVisibleWindows(uint monitorId)
