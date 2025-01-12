@@ -28,14 +28,19 @@ public static class DisplayFusionFunction
    private static readonly uint RESOLUTION_2K_HEIGHT = 1440;
    private static readonly uint MOUSE_RESTORE_THRESHOLD = 200;
 
-   private static bool enableMouseMove = true;
-   private static bool enableDebugPrints = true;
-   private static bool debugPrintDoMinRestore = enableDebugPrints && false;
-   private static bool debugPrintStartStop = enableDebugPrints && false;
-   private static bool debugPrintFindMonitorId = enableDebugPrints && false;
-   private static bool debugPrintNoMonitorFound = enableDebugPrints && true;
-   private static bool debugWindowFiltering = enableDebugPrints && false;
-   private static bool debugPrintMoveCursor = enableDebugPrints && false;
+   private static readonly bool enableMouseMove = false;
+   private static readonly bool enableDebugPrints = true;
+   private static readonly bool forceMinimizeDefault = true;
+   private static readonly bool forceRestoreDefault = true;
+   private static readonly bool debugPrintDoMinRestore = enableDebugPrints && false;
+   private static readonly bool debugPrintStartStop = enableDebugPrints && false;
+   private static readonly bool debugPrintFindMonitorId = enableDebugPrints && false;
+   private static readonly bool debugPrintNoMonitorFound = enableDebugPrints && true;
+   private static readonly bool debugWindowFiltering = enableDebugPrints && false;
+   private static readonly bool debugPrintMoveCursor = enableDebugPrints && false;
+   private static readonly bool debugPrintDecideMinRestore = enableDebugPrints && false;
+   private static readonly bool debugPrintCountToMin = enableDebugPrints && false;
+
 
 
 
@@ -49,35 +54,61 @@ public static class DisplayFusionFunction
 
    public static void Run(IntPtr windowHandle)
    {
-      if (ShouldMinimize())
-      {
-         int minimizedCount = MinimizeWindows();
+      bool windowsAreVisible = CountWindowsToMinimize() > 0;
+      bool windowsWereMinimized = WindowsWereMinimized();
 
-         // restore all windows when there was nothing to minimize
-         if (minimizedCount < 1)
+      if (!windowsWereMinimized && windowsAreVisible)
+      {
+         // nothing was previously minimized but there are visible windows, just minimize them
+         if (debugPrintDecideMinRestore) MessageBox.Show($"NOT windowsWereMinimized && windowsAreVisible");
+         int minimizedCount = MinimizeWindows();
+         if (minimizedCount < 1) MessageBox.Show($"ERROR no windows were minimized but should be!");
+      }
+      else if (!windowsWereMinimized && !windowsAreVisible)
+      {
+         // nothing was previously minimized, nothing is visible, force all windows that may have been manually minimized to restore
+         if (debugPrintDecideMinRestore) MessageBox.Show($"NOT windowsWereMinimized && NOT windowsAreVisible");
+         int restoredCount = RestoreWindows(true); // force restore all windows
+         if (restoredCount < 1) MessageBox.Show($"ERROR no windows were restored but that may be ok if there was none at all"); // todo remove
+      }
+      else if (windowsWereMinimized && windowsAreVisible)
+      {
+         // there were windows minimized but there are also manually restored or new windows visible
+         // decide if we should restore saved windows or minimize visible ones
+         if (ShouldForceMinimize())
          {
-            RestoreWindows(true); // force all windows restore
+            if (debugPrintDecideMinRestore) MessageBox.Show($"windowsWereMinimized && windowsAreVisible && ShouldForceMinimize");
+            int minimizedCount = MinimizeWindows();
+            if (minimizedCount < 1) MessageBox.Show($"ERROR no windows were minimized but should be (force)!");
          }
+         else
+         {
+            if (debugPrintDecideMinRestore) MessageBox.Show($"windowsWereMinimized && windowsAreVisible && NOT ShouldForceMinimize");
+            int restoredCount = RestoreWindows(false); // try restoring only saved windows
+            if ((restoredCount < 1) && ShouldForceRestore()) // optionally restore all other minimized if saved windows were manually restored
+            {
+               restoredCount = RestoreWindows(true); // restore all windows (not only saved but minimalized manually)
+               if (restoredCount < 1) MessageBox.Show($"There is no other windows to restore (todo remove)");
+            }
+         }
+      }
+      else if (windowsWereMinimized && !windowsAreVisible)
+      {
+         // there were windows minimized and there are no new visible windows, just restore saved windows
+         if (debugPrintDecideMinRestore) MessageBox.Show($"windowsWereMinimized && NOT windowsAreVisible");
+         int restoredCount = RestoreWindows(false); // restore only saved windows
+         if (restoredCount < 1) MessageBox.Show($"ERROR no windows were restored but should be");
       }
       else
       {
-         int restoredCount = RestoreWindows(false);
-
-         // minimize windows when there was nothing to restore
-         if (restoredCount < 1)
-         {
-            MinimizeWindows();
-         }
+         MessageBox.Show($"ERROR else state not expected!");
       }
    }
 
-   // script should restore if there is no ScriptStateSetting set, or if the setting is equal to RestoredState
-   // todo handle force minimize when there is at least one not minimized window
-   private static bool ShouldMinimize()
+   private static bool WindowsWereMinimized()
    {
-      //return true;
       string setting = BFS.ScriptSettings.ReadValue(ScriptStateSetting);
-      return (setting.Length == 0) || (setting.Equals(RestoredState, StringComparison.Ordinal));
+      return !string.IsNullOrEmpty(setting) && (setting.Equals(MinimizedState, StringComparison.Ordinal));
    }
 
    public static int MinimizeWindows()
@@ -96,22 +127,16 @@ public static class DisplayFusionFunction
       // loop through all the visible windows on the monitor
       foreach (IntPtr window in windowsToMinimize)
       {
-         // minimize the window
-         if (!BFS.Window.IsMinimized(window))
-         {
-            if (debugPrintDoMinRestore) MessageBox.Show($"minimizing window {BFS.Window.GetText(window)}");
-            WindowUtils.MinimizeWindow(window);
-            minimizedWindowsCount += 1;
+         if (debugPrintDoMinRestore) MessageBox.Show($"minimizing window {BFS.Window.GetText(window)}");
+         WindowUtils.MinimizeWindow(window);
+         minimizedWindowsCount += 1;
 
-            // add the window to the list of windows
-            minimizedWindows += window.ToInt64().ToString() + "|";
-         }
-         else
-         {
-            if (debugPrintDoMinRestore) MessageBox.Show($"already minimized window {BFS.Window.GetText(window)}");
-         }
-
+         // add the window to the list of windows
+         minimizedWindows += window.ToInt64().ToString() + "|";
       }
+
+      // set focus to Desktop to enable alt-tab to top minimized window and 1-click manual activation on taskbar
+      WindowUtils.FocusOnDekstop();
 
       // hide mouse cursor to primary monitor (if feature is enabled and at least one window was minimized)
       if (enableMouseMove && (minimizedWindowsCount > 0)) HandleMouseOut();
@@ -278,10 +303,59 @@ public static class DisplayFusionFunction
       return UInt32.MaxValue;
    }
 
+   public static int CountWindowsToMinimize()
+   {
+      uint monitorId = GetOledMonitorID();
+      IntPtr[] windowsToMinimize = GetFilteredVisibleWindows(monitorId);
+
+      if (debugPrintCountToMin) MessageBox.Show($"CountWindowsToMinimize: {windowsToMinimize.Length}");
+      foreach (IntPtr window in windowsToMinimize)
+      {
+         if (debugPrintCountToMin) MessageBox.Show($"To minimize: \n\n|{BFS.Window.GetText(window)}|\n\n|{BFS.Window.GetClass(window)}|");
+      }
+
+      return windowsToMinimize.Length;
+   }
+
+   public static bool ShouldForceMinimize()
+   {
+      // todo add reading a setting or if some key is pressed
+      return forceMinimizeDefault;
+   }
+
+   public static bool ShouldForceRestore()
+   {
+      // todo add reading a setting or if some key is pressed
+      return forceRestoreDefault;
+   }
    public static IntPtr[] GetFilteredVisibleWindows(uint monitorId)
    {
       IntPtr[] allWindows = BFS.Window.GetVisibleWindowHandlesByMonitor(monitorId);
-      IntPtr[] filteredWindows = allWindows.Where(FilterBlacklistedWindowsOut).ToArray();
+      IntPtr[] filteredWindows = allWindows.Where(windowHandle =>
+      {
+         if (IsWindowBlacklisted(windowHandle))
+         {
+            // MessageBox.Show($"W ignored blacklisted:\n\n|{BFS.Window.GetText(windowHandle)}|\n\n|{BFS.Window.GetClass(windowHandle)}|");
+            return false;
+         }
+         else
+         {
+            // MessageBox.Show($"W NOT ignored blacklisted:\n\n|{BFS.Window.GetText(windowHandle)}|\n\n|{BFS.Window.GetClass(windowHandle)}|");
+         }
+
+         if (BFS.Window.IsMinimized(windowHandle))
+         {
+            // MessageBox.Show($"W ignored minimized:\n\n|{BFS.Window.GetText(windowHandle)}|\n\n|{BFS.Window.GetClass(windowHandle)}|");
+            return false;
+         }
+         else
+         {
+            // MessageBox.Show($"W NOT ignored minimized:\n\n|{BFS.Window.GetText(windowHandle)}|\n\n|{BFS.Window.GetClass(windowHandle)}|");
+         }
+
+         // MessageBox.Show($"W NOT ignored at all:\n\n|{BFS.Window.GetText(windowHandle)}|\n\n|{BFS.Window.GetClass(windowHandle)}|");
+         return true;
+      }).ToArray();
 
       return filteredWindows;
    }
@@ -294,7 +368,7 @@ public static class DisplayFusionFunction
          // ignore windows that are not minimized
          if (!BFS.Window.IsMinimized(windowHandle)) return false;
 
-         // find monitor size od minimized window
+         // find monitor size of minimized window
          Rectangle currentWindowMonitorBounds = WindowUtils.GetMonitorBoundsFromWindow(windowHandle);
 
          // filter window out when it would be restored to other monitors than OLED 4K
@@ -306,59 +380,61 @@ public static class DisplayFusionFunction
          return true;
       }).ToArray();
 
-      IntPtr[] filteredWindows = allWindows.Where(FilterBlacklistedWindowsOut).ToArray();
+      IntPtr[] filteredWindows = allWindows.Where(windowHandle => { return !IsWindowBlacklisted(windowHandle); }).ToArray();
       return filteredWindows;
    }
 
-   public static bool FilterBlacklistedWindowsOut(IntPtr windowHandle)
+   public static bool IsWindowBlacklisted(IntPtr windowHandle)
    {
       // ignore windows based on classname blacklist
       string classname = BFS.Window.GetClass(windowHandle);
       if (classnameBlacklist.Exists(blacklistItem =>
+            {
+               if (classname.StartsWith(blacklistItem, StringComparison.Ordinal))
+               {
+                  if (debugWindowFiltering) MessageBox.Show($"Ignored bacause of class: {classname}|{blacklistItem}");
+                  return true;
+               }
+               return false;
+            })
+         )
       {
-         if (classname.StartsWith(blacklistItem, StringComparison.Ordinal))
-         {
-            //MessageBox.Show($"Ignored bacause of class: {classname}|{blacklistItem}");
-            return true;
-         }
-         return false;
-      }))
-      {
-         return false;
+         return true;
       }
 
       // ignore windows based on empty text
       string text = BFS.Window.GetText(windowHandle);
       if (string.IsNullOrEmpty(text))
       {
-         // MessageBox.Show($"Ignored bacause of empty text");
-         return false;
+         if (debugWindowFiltering) MessageBox.Show($"Ignored bacause of empty text (classname: {classname})");
+         return true;
       }
 
       // ignore windows based on text blacklist 
       if (textBlacklist.Exists(blacklistItem =>
+            {
+               if (text.Equals(blacklistItem, StringComparison.Ordinal))
+               {
+                  if (debugWindowFiltering) MessageBox.Show($"Ignored bacause of text: {text}|{blacklistItem}|");
+                  return true;
+               }
+               return false;
+            })
+         )
       {
-         if (text.Equals(blacklistItem, StringComparison.Ordinal))
-         {
-            MessageBox.Show($"Ignored bacause of text: {text}|{blacklistItem}|");
-            return true;
-         }
-         return false;
-      }))
-      {
-         return false;
+         return true;
       }
 
       // ignore windows with wrong size
       Rectangle windowRect = WindowUtils.GetBounds(windowHandle);
       if (windowRect.Width <= 0 || windowRect.Height <= 0)
       {
-         // todo is it needed? add if for print-debug-flag
+         // todo is it needed? remove or add if(debugWindowFiltering) 
          MessageBox.Show($"Filtered out windows wrong size (w{windowRect.Width}, h{windowRect.Height}). classname: {classname}, text: {text})");
-         return false;
+         return true;
       }
 
-      return true;
+      return false;
    }
 
    public static (int X, int Y) GetMouseHideTarget()
@@ -370,6 +446,9 @@ public static class DisplayFusionFunction
 
    public static class WindowUtils
    {
+      [DllImport("user32.dll")]
+      private static extern IntPtr GetShellWindow();
+
       [DllImport("user32.dll", SetLastError = true)]
       [return: MarshalAs(UnmanagedType.Bool)]
       public static extern bool SetForegroundWindow(IntPtr hWnd);
@@ -422,7 +501,7 @@ public static class DisplayFusionFunction
       private static readonly int SW_RESTORE = 9;
       private static readonly int DWMWA_EXTENDED_FRAME_BOUNDS = 0x9;
       private static readonly uint MONITOR_DEFAULTTONEAREST = 2;
-      
+
       private static bool GetRectangleExcludingShadow(IntPtr handle, out RECT rect)
       {
          var result = DwmGetWindowAttribute(handle, DWMWA_EXTENDED_FRAME_BOUNDS, out rect, Marshal.SizeOf(typeof(RECT)));
@@ -498,13 +577,29 @@ public static class DisplayFusionFunction
 
       public static void MinimizeWindow(IntPtr windowHandle)
       {
-         // ShowWindow(windowHandle, SW_MINIMIZE); // activates next window than currently minimized
-         // ShowWindow(windowHandle, SW_SHOWMINIMIZED); // activates currently minimized window (doesn't work?)
-         ShowWindow(windowHandle, SW_SHOWMINNOACTIVE); // doesn't activate any window
+         // ShowWindow(windowHandle, SW_MINIMIZE); // activates next window than currently minimized, pushes some windows at the end of alt-tab
+         ShowWindow(windowHandle, SW_SHOWMINIMIZED); // leaves windows on top of alt-tab
+         // ShowWindow(windowHandle, SW_SHOWMINNOACTIVE); // pushes windows to back of alt-tab
       }
       public static void RestoreWindow(IntPtr windowHandle)
       {
          ShowWindow(windowHandle, SW_RESTORE);
+      }
+
+      public static void FocusOnDekstop()
+      {
+         IntPtr hWndDesktop = GetShellWindow();
+         if (hWndDesktop == IntPtr.Zero)
+         {
+            MessageBox.Show($"ERROR Desktop window not found!");
+            return;
+         }
+         bool success = SetForegroundWindow(hWndDesktop);
+         if (!success)
+         {
+            int errorCode = Marshal.GetLastWin32Error();
+            MessageBox.Show($"FocusOnDekstop error: {errorCode}");
+         }
       }
 
       public static void PushToTop(IntPtr windowHandle)
