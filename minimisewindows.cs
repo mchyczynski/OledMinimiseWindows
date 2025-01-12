@@ -18,8 +18,8 @@ public static class DisplayFusionFunction
    private const string MinimizedWindowsSetting = "CursorMonitorMinimizedWindows";
    private const string MousePositionXSetting = "MousePositionXSetting";
    private const string MousePositionYSetting = "MousePositionYSetting";
-   private const string MinimizedState = "0";
-   private const string NormalizeState = "1";
+   private const string RestoredState = "0";
+   private const string MinimizedState = "1";
 
    private static readonly uint RESOLUTION_4K_WIDTH = 3840;
    private static readonly uint RESOLUTION_4K_HEIGHT = 2160;
@@ -71,12 +71,13 @@ public static class DisplayFusionFunction
       }
    }
 
-   // script is in minimize state if there is no setting, or if the setting is equal to MinimizedState
+   // script should restore if there is no ScriptStateSetting set, or if the setting is equal to RestoredState
+   // todo handle force minimize when there is at least one not minimized window
    private static bool ShouldMinimize()
    {
       //return true;
       string setting = BFS.ScriptSettings.ReadValue(ScriptStateSetting);
-      return (setting.Length == 0) || (setting.Equals(MinimizedState, StringComparison.Ordinal));
+      return (setting.Length == 0) || (setting.Equals(RestoredState, StringComparison.Ordinal));
    }
 
    public static int MinimizeWindows()
@@ -92,7 +93,7 @@ public static class DisplayFusionFunction
       IntPtr[] windowsToMinimize = GetFilteredVisibleWindows(monitorId);
 
       int minimizedWindowsCount = 0;
-      // loop through all the visible windows on the cursor monitor
+      // loop through all the visible windows on the monitor
       foreach (IntPtr window in windowsToMinimize)
       {
          // minimize the window
@@ -112,21 +113,21 @@ public static class DisplayFusionFunction
 
       }
 
-      // Hide mouse cursor to primary monitor if enabled and at leas one window was minimized
+      // hide mouse cursor to primary monitor (if feature is enabled and at least one window was minimized)
       if (enableMouseMove && (minimizedWindowsCount > 0)) HandleMouseOut();
 
-      // save the list of windows we minimized
+      // save the list of windows that were minimized
       BFS.ScriptSettings.WriteValue(MinimizedWindowsSetting, minimizedWindows);
 
-      // set the script state to NormalizeState
-      BFS.ScriptSettings.WriteValue(ScriptStateSetting, NormalizeState);
+      // set the script state to MinimizedState
+      BFS.ScriptSettings.WriteValue(ScriptStateSetting, MinimizedState);
 
       if (debugPrintStartStop) MessageBox.Show($"finished MIN (minimized {minimizedWindowsCount}/{windowsToMinimize.Length} windows)");
 
       return minimizedWindowsCount;
    }
 
-   public static int RestoreWindows(bool forceAll)
+   public static int RestoreWindows(bool forceRestoreAll)
    {
       if (debugPrintStartStop) MessageBox.Show("start RESTORE");
 
@@ -139,7 +140,7 @@ public static class DisplayFusionFunction
 
       // get windows to be restored
       List<IntPtr> windowsToRestore = new List<IntPtr>();
-      if (forceAll) // restore all windows on OLED monitor
+      if (forceRestoreAll) // restore all windows on OLED monitor
       {
          // get monitor ID of OLED monitor (assumption it is the only 4k monitor in the system)
          windowsToRestore = GetFilteredMinimizedWindows(GetOledMonitorID()).ToList();
@@ -161,10 +162,9 @@ public static class DisplayFusionFunction
       }
 
       int restoredWindowsCount = 0;
-      // loop through each setting
+      // loop through each window to restore
       foreach (IntPtr windowHandle in windowsToRestore)
       {
-         // restore the window
          if (BFS.Window.IsMinimized(windowHandle))
          {
             if (debugPrintDoMinRestore) MessageBox.Show($"restoring window {BFS.Window.GetText(new IntPtr(windowHandle))}");
@@ -181,8 +181,8 @@ public static class DisplayFusionFunction
       // clear the windows that we saved
       BFS.ScriptSettings.WriteValue(MinimizedWindowsSetting, string.Empty);
 
-      // set the script to MinimizedState
-      BFS.ScriptSettings.WriteValue(ScriptStateSetting, MinimizedState);
+      // set the script to RestoredState
+      BFS.ScriptSettings.WriteValue(ScriptStateSetting, RestoredState);
       if (debugPrintStartStop) MessageBox.Show($"finished RESTORE (restored {restoredWindowsCount}/{windowsToRestore.Count} windows)");
 
       return restoredWindowsCount;
@@ -190,28 +190,28 @@ public static class DisplayFusionFunction
 
    public static void HandleMouseOut()
    {
-      // Check if mouse is on 4K OLED monitor so it should be moved
+      // ccheck if mouse is on 4K OLED monitor so it should be moved
       int mouseX = BFS.Input.GetMousePositionX();
       int mouseY = BFS.Input.GetMousePositionY();
 
       // BFS.Monitor.GetMonitorBoundsByMouseCursor()
       Rectangle mouseMonitorBounds = BFS.Monitor.GetMonitorBoundsByXY(mouseX, mouseY);
 
-      // Mouse on monitor 4K OLED
+      // mouse on monitor 4K OLED
       if (mouseMonitorBounds.Width == RESOLUTION_4K_WIDTH && mouseMonitorBounds.Height == RESOLUTION_4K_HEIGHT)
       {
-         // Store mouse position before moving it
+         // store mouse position before moving it
          BFS.ScriptSettings.WriteValueInt(MousePositionXSetting, mouseX);
          BFS.ScriptSettings.WriteValueInt(MousePositionYSetting, mouseY);
 
-         // Move cursor to primary monitor
+         // move cursor to primary monitor
          var (mouseHideTargetX, mouseHideTargetY) = GetMouseHideTarget();
          BFS.Input.SetMousePosition(mouseHideTargetX, mouseHideTargetY);
          if (debugPrintMoveCursor) MessageBox.Show($"HandleMouseOut: hiding mouse from mouseOldX({mouseX}) mouseOldY({mouseY})");
       }
-      else // Mouse on other monitor
+      else // mouse on other monitor
       {
-         // Clear stored mouse position
+         // clear stored mouse position
          BFS.ScriptSettings.DeleteValue(MousePositionXSetting);
          BFS.ScriptSettings.DeleteValue(MousePositionYSetting);
          if (debugPrintMoveCursor) MessageBox.Show($"HandleMouseOut: skip hiding mouse because not on 4k OLED monitor");
@@ -220,23 +220,23 @@ public static class DisplayFusionFunction
 
    public static void HandleMouseBack()
    {
-      // Read old mouse position
+      // read old mouse position
       int mouseOldX = BFS.ScriptSettings.ReadValueInt(MousePositionXSetting);
       int mouseOldY = BFS.ScriptSettings.ReadValueInt(MousePositionYSetting);
 
-      // Abort when no stored position
+      // abort when no stored position
       if (mouseOldX == 0 && mouseOldY == 0)
       {
-         // Ignore fact that mouse may actually be saved at 0,0 pos as a minor problem
+         // ignore fact that mouse may actually be saved at 0,0 pos as a minor problem
          return;
       }
 
-      // Read currect mouse position
+      // read currect mouse position
       int mouseX = BFS.Input.GetMousePositionX();
       int mouseY = BFS.Input.GetMousePositionY();
 
-      // Check if mouse was moved after hiding it from 4k OLED monitor 
-      // Which is to check if current position differs enough from mouse hide position
+      // check if mouse was moved after hiding it from 4k OLED monitor 
+      // which is to check if current position differs enough from mouse hide position
       var (mouseHideTargetX, mouseHideTargetY) = GetMouseHideTarget();
       int diffX = Math.Abs(mouseX - mouseHideTargetX);
       int diffY = Math.Abs(mouseY - mouseHideTargetY);
@@ -244,7 +244,7 @@ public static class DisplayFusionFunction
       bool wasMoved = diffX > MOUSE_RESTORE_THRESHOLD || diffY > MOUSE_RESTORE_THRESHOLD;
       if (!wasMoved)
       {
-         // Restore mouse position because it wasn't moved enough
+         // restore mouse position because it wasn't moved enough
          if (debugPrintMoveCursor) MessageBox.Show($"HandleMouseBack: restoring to mouseOldX({mouseOldX}) mouseOldY({mouseOldY})");
          BFS.Input.SetMousePosition(mouseOldX, mouseOldY);
       }
@@ -257,7 +257,7 @@ public static class DisplayFusionFunction
                                                     $"hideX({mouseHideTargetX}) hideY({mouseHideTargetY})");
       }
 
-      // Clear stored mouse position
+      // clear stored mouse position
       BFS.ScriptSettings.DeleteValue(MousePositionXSetting);
       BFS.ScriptSettings.DeleteValue(MousePositionYSetting);
    }
@@ -288,16 +288,16 @@ public static class DisplayFusionFunction
 
    public static IntPtr[] GetFilteredMinimizedWindows(uint monitorId)
    {
-      // Get minimized windows from OLED 4k monitor
+      // get minimized windows from OLED 4k monitor
       IntPtr[] allWindows = BFS.Window.GetVisibleAndMinimizedWindowHandles().Where(windowHandle =>
       {
-         // Ignore windows that are not minimized
+         // ignore windows that are not minimized
          if (!BFS.Window.IsMinimized(windowHandle)) return false;
 
-         // Find monitor size od minimized window
+         // find monitor size od minimized window
          Rectangle currentWindowMonitorBounds = WindowUtils.GetMonitorBoundsFromWindow(windowHandle);
 
-         // FIlter window out when it would be restored to other monitors than OLED 4k
+         // filter window out when it would be restored to other monitors than OLED 4K
          if (currentWindowMonitorBounds.Width != RESOLUTION_4K_WIDTH ||
              currentWindowMonitorBounds.Height != RESOLUTION_4K_HEIGHT)
          {
@@ -312,7 +312,7 @@ public static class DisplayFusionFunction
 
    public static bool FilterBlacklistedWindowsOut(IntPtr windowHandle)
    {
-      // Ignore windows based on classname blacklist
+      // ignore windows based on classname blacklist
       string classname = BFS.Window.GetClass(windowHandle);
       if (classnameBlacklist.Exists(blacklistItem =>
       {
@@ -327,7 +327,7 @@ public static class DisplayFusionFunction
          return false;
       }
 
-      // Ignore windows based on empty text
+      // ignore windows based on empty text
       string text = BFS.Window.GetText(windowHandle);
       if (string.IsNullOrEmpty(text))
       {
@@ -335,7 +335,7 @@ public static class DisplayFusionFunction
          return false;
       }
 
-      // Ignore windows based on text blacklist 
+      // ignore windows based on text blacklist 
       if (textBlacklist.Exists(blacklistItem =>
       {
          if (text.Equals(blacklistItem, StringComparison.Ordinal))
@@ -349,7 +349,7 @@ public static class DisplayFusionFunction
          return false;
       }
 
-      // Ignore windows with wrong size
+      // ignore windows with wrong size
       Rectangle windowRect = WindowUtils.GetBounds(windowHandle);
       if (windowRect.Width <= 0 || windowRect.Height <= 0)
       {
