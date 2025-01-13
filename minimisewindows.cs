@@ -60,8 +60,21 @@ public static class DisplayFusionFunction
    {
       bool windowsAreVisible = CountWindowsToMinimize() > 0;
       bool windowsWereMinimized = WindowsWereMinimized();
+      bool forceRestore = ShouldForceRestore();
 
-      if (!windowsWereMinimized && windowsAreVisible)
+      if (forceRestore) // modifier key is pressed, never minimize
+      {
+         if (debugPrintDecideMinRestore) MessageBox.Show($"force restore, windows were" + (windowsWereMinimized ? "" : "NOT ") + " minimized previously");
+         // try restoring only saved windows first if there were any
+         int restoredCount = RestoreWindows(!windowsWereMinimized);
+         // optionally restore all other minimized if saved windows were manually restored
+         if ((restoredCount < 1) && ShouldKeepRestoring() && windowsWereMinimized)
+         {
+            restoredCount = RestoreWindows(true); // restore all windows (not only saved but minimalized manually)
+            if (restoredCount < 1) MessageBox.Show($"There is no other windows to restore (todo remove)");
+         }
+      }
+      else if (!windowsWereMinimized && windowsAreVisible)
       {
          // nothing was previously minimized but there are visible windows, just minimize them
          if (debugPrintDecideMinRestore) MessageBox.Show($"NOT windowsWereMinimized && windowsAreVisible");
@@ -73,7 +86,7 @@ public static class DisplayFusionFunction
          // nothing was previously minimized, nothing is visible, force all windows that may have been manually minimized to restore
          if (debugPrintDecideMinRestore) MessageBox.Show($"NOT windowsWereMinimized && NOT windowsAreVisible");
          int restoredCount = RestoreWindows(true); // force restore all windows
-         if (restoredCount < 1) MessageBox.Show($"ERROR no windows were restored but that may be ok if there was none at all"); // todo remove
+         if (restoredCount < 1) MessageBox.Show($"No windows were restored but that may be ok if there was none at all (todo remove)"); // todo remove
       }
       else if (windowsWereMinimized && windowsAreVisible)
       {
@@ -335,10 +348,10 @@ public static class DisplayFusionFunction
 
    public static bool ShouldForceRestore()
    {
-      bool keyPressed = BFS.Input.IsMouseDown("1;");
-      // bool keyPressed = BFS.Input.IsKeyDown(KEY_ALT);
-      if (keyPressed) MessageBox.Show($"key is pressed");
-      else MessageBox.Show($"key is NOT pressed");
+      // bool keyPressed = BFS.Input.IsMouseDown("1;");
+      bool keyPressed = BFS.Input.IsKeyDown(KEY_SHIFT);
+      // if (keyPressed) MessageBox.Show($"key is pressed");
+      // else MessageBox.Show($"key is NOT pressed");
 
       return keyPressed;
    }
