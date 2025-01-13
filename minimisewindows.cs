@@ -176,7 +176,7 @@ public static class DisplayFusionFunction
          WindowUtils.FocusOnDekstop();
 
          // hide mouse cursor to primary monitor (if feature is enabled and at least one window was minimized)
-         if (enableMouseMove && (minimizedWindowsCount > 0)) HandleMouseOut();
+         if (ShoudlMoveMouse() && (minimizedWindowsCount > 0)) HandleMouseOut();
       }
 
       // save the list of windows that were minimized
@@ -194,12 +194,8 @@ public static class DisplayFusionFunction
    {
       if (debugPrintStartStop) MessageBox.Show("start RESTORE");
 
-      // we are in the normalize window state
-      // get the windows that we minimized previously
-      string windows = BFS.ScriptSettings.ReadValue(MinimizedWindowsListSetting);
-
       // First restore mouse cursor position if enabled
-      if (enableMouseMove) HandleMouseBack();
+      if (ShoudlMoveMouse()) HandleMouseBack();
 
       // get windows to be restored
       List<IntPtr> windowsToRestore = new List<IntPtr>();
@@ -210,7 +206,10 @@ public static class DisplayFusionFunction
       }
       else // only restore windows previously minimized
       {
-         string[] windowsToRestoreStrings = windows.Split(new char[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
+         // get the windows that we minimized previously
+         string savedWindows = BFS.ScriptSettings.ReadValue(MinimizedWindowsListSetting);
+
+         string[] windowsToRestoreStrings = savedWindows.Split(new char[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
          Array.Reverse(windowsToRestoreStrings);
          foreach (string window in windowsToRestoreStrings)
          {
@@ -222,6 +221,16 @@ public static class DisplayFusionFunction
 
             windowsToRestore.Add(new IntPtr(windowHandleValue));
          }
+      }
+
+      // check if focus mode was requested
+      bool focusMode = IsFocusModeRequested();
+
+      IntPtr[] windowsToPushOnTop = new IntPtr[] { };
+      if (focusMode)
+      {
+         // save list of currently restored windows to later push them on top of restored ones
+         windowsToPushOnTop = GetFilteredVisibleWindows(GetOledMonitorID());
       }
 
       int restoredWindowsCount = 0;
@@ -238,6 +247,17 @@ public static class DisplayFusionFunction
          else
          {
             if (debugPrintDoMinRestore) MessageBox.Show($"already restored window {BFS.Window.GetText(new IntPtr(windowHandle))}");
+         }
+      }
+
+      // if in focus mode, push windows that were active on top of restored ones
+      if (focusMode)
+      {
+         Array.Reverse(windowsToPushOnTop);
+         foreach (IntPtr windowHandle in windowsToPushOnTop)
+         {
+            if (debugPrintDoMinRestore) MessageBox.Show($"Pushing window {BFS.Window.GetText(new IntPtr(windowHandle))} on top (focus mode)");
+            WindowUtils.PushToTop(windowHandle);
          }
       }
 
@@ -365,6 +385,11 @@ public static class DisplayFusionFunction
    {
       // todo store in settings
       return keepRestoringDefault;
+   }
+
+   public static bool ShoudlMoveMouse()
+   {
+      return enableMouseMove && !IsFocusModeRequested();
    }
 
    public static bool ShouldForceRestore()
