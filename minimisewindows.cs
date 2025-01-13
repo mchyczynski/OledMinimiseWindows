@@ -36,6 +36,8 @@ public static class DisplayFusionFunction
    private static readonly bool enableDebugPrints = true;
    private static readonly bool prioritizeMinimizeDefault = true;
    private static readonly bool keepRestoringDefault = true;
+   private static readonly bool enableForceRestore = true;
+   private static readonly bool enableFocusMode = true;
    private static readonly bool debugPrintDoMinRestore = enableDebugPrints && false;
    private static readonly bool debugPrintStartStop = enableDebugPrints && false;
    private static readonly bool debugPrintFindMonitorId = enableDebugPrints && false;
@@ -398,7 +400,7 @@ public static class DisplayFusionFunction
       bool keyPressed = BFS.Input.IsKeyDown(KEY_SHIFT);
       if (debugPrintForceRestoreKey) MessageBox.Show($"ForceRestore key is" + (keyPressed ? "" : " NOT") + " pressed");
 
-      return keyPressed;
+      return keyPressed & enableForceRestore;
    }
 
    public static bool IsFocusModeRequested()
@@ -407,7 +409,7 @@ public static class DisplayFusionFunction
       bool keyPressed = BFS.Input.IsKeyDown(KEY_CTRL);
       if (debugPrintFocusModeKey) MessageBox.Show($"FocusMode key is" + (keyPressed ? "" : " NOT") + " pressed");
 
-      return keyPressed;
+      return keyPressed & enableFocusMode;
    }
 
    public static IntPtr[] GetFilteredVisibleWindows(uint monitorId)
@@ -661,7 +663,7 @@ public static class DisplayFusionFunction
       {
          // ShowWindow(windowHandle, SW_MINIMIZE); // activates next window than currently minimized, pushes some windows at the end of alt-tab
          ShowWindow(windowHandle, SW_SHOWMINIMIZED); // leaves windows on top of alt-tab
-                                                     // ShowWindow(windowHandle, SW_SHOWMINNOACTIVE); // pushes windows to back of alt-tab
+         // ShowWindow(windowHandle, SW_SHOWMINNOACTIVE); // pushes windows to back of alt-tab
       }
       public static void RestoreWindow(IntPtr windowHandle)
       {
