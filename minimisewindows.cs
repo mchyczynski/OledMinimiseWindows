@@ -16,6 +16,7 @@ public static class DisplayFusionFunction
 {
    private const string ScriptStateSetting = "OledMinimizerScriptState";
    private const string MinimizedWindowsListSetting = "OledMinimizerMinimizedWindowsList";
+   private const string SweptdWindowsListSetting = "OledMinimizerSweptWindowsList";
    private const string MousePositionXSetting = "MousePositionXSetting";
    private const string MousePositionYSetting = "MousePositionYSetting";
    private const string RestoredState = "0";
@@ -38,6 +39,7 @@ public static class DisplayFusionFunction
    private static readonly bool keepRestoringDefault = true;
    private static readonly bool enableForceRestore = true;
    private static readonly bool enableFocusMode = true;
+   private static readonly bool enableSweepMode = true;
    private static readonly bool debugPrintDoMinRestore = enableDebugPrints && false;
    private static readonly bool debugPrintStartStop = enableDebugPrints && false;
    private static readonly bool debugPrintFindMonitorId = enableDebugPrints && false;
@@ -49,6 +51,7 @@ public static class DisplayFusionFunction
    private static readonly bool debugPrintForceRestoreKey = enableDebugPrints && false;
    private static readonly bool debugPrintFocusModeKey = enableDebugPrints && false;
    private static readonly bool debugPrintFocusMode = enableDebugPrints && false;
+   private static readonly bool debugPrintSweepModeKey = enableDebugPrints && false;
 
 
    private static List<string> classnameBlacklist = new List<string> {"DFTaskbar", "DFTitleBarWindow", "Shell_TrayWnd",
@@ -410,6 +413,15 @@ public static class DisplayFusionFunction
       if (debugPrintFocusModeKey) MessageBox.Show($"FocusMode key is" + (keyPressed ? "" : " NOT") + " pressed");
 
       return keyPressed & enableFocusMode;
+   }
+
+   public static bool IsSweepModeRequested()
+   {
+      // bool keyPressed = BFS.Input.IsMouseDown("2;");
+      bool keyPressed = BFS.Input.IsKeyDown(KEY_ALT);
+      if (debugPrintSweepModeKey) MessageBox.Show($"SweepMode key is" + (keyPressed ? "" : " NOT") + " pressed");
+
+      return keyPressed & enableSweepMode;
    }
 
    public static IntPtr[] GetFilteredVisibleWindows(uint monitorId)
