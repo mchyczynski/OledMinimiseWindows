@@ -44,8 +44,9 @@ public static class DisplayFusionFunction
    private static readonly bool debugPrintMoveCursor = enableDebugPrints && false;
    private static readonly bool debugPrintDecideMinRestore = enableDebugPrints && false;
    private static readonly bool debugPrintCountToMin = enableDebugPrints && false;
-
-
+   private static readonly bool debugPrintForceRestoreKey = enableDebugPrints && false;
+   private static readonly bool debugPrintFocusModeKey = enableDebugPrints && false;
+   private static readonly bool debugPrintFocusMode = enableDebugPrints && false;
 
 
    private static List<string> classnameBlacklist = new List<string> {"DFTaskbar", "DFTitleBarWindow", "Shell_TrayWnd",
@@ -96,7 +97,7 @@ public static class DisplayFusionFunction
          {
             if (debugPrintDecideMinRestore) MessageBox.Show($"windowsWereMinimized && windowsAreVisible && ShouldPrioritizeMinimize");
             int minimizedCount = MinimizeWindows();
-            if (minimizedCount < 1) MessageBox.Show($"ERROR no windows were minimized but should be (force)!");
+            if (minimizedCount < 1) MessageBox.Show($"ERROR no windows were minimized but should be (prio min)!");
          }
          else // don't prioritize minimizing new windows and restore saved ones
          {
@@ -140,10 +141,25 @@ public static class DisplayFusionFunction
       // get windows to be minimized
       IntPtr[] windowsToMinimize = GetFilteredVisibleWindows(monitorId);
 
+      // check if focus mode was requested
+      bool focusMode = IsFocusModeRequested();
+
+      // save handle to currently active window
+      IntPtr activeWindowHandle = BFS.Window.GetFocusedWindow();
+      if (debugPrintFocusMode) MessageBox.Show($"focus window found: {BFS.Window.GetText(activeWindowHandle)}");
+
       int minimizedWindowsCount = 0;
       // loop through all the visible windows on the monitor
       foreach (IntPtr window in windowsToMinimize)
       {
+         // if focus mode enabled skip focused window from list to minimize
+         if (focusMode && window == activeWindowHandle)
+         {
+            if (debugPrintDoMinRestore) MessageBox.Show($"skipping focus window {BFS.Window.GetText(window)}");
+            minimizedWindowsCount += 1; // treat active window in focus mode as if it was minimized
+            continue;
+         }
+
          if (debugPrintDoMinRestore) MessageBox.Show($"minimizing window {BFS.Window.GetText(window)}");
          WindowUtils.MinimizeWindow(window);
          minimizedWindowsCount += 1;
@@ -152,11 +168,16 @@ public static class DisplayFusionFunction
          minimizedWindows += window.ToInt64().ToString() + "|";
       }
 
-      // set focus to Desktop to enable alt-tab to top minimized window and 1-click manual activation on taskbar
-      WindowUtils.FocusOnDekstop();
+      // change focus and move mouse only when not in focus mode
+      if (!focusMode)
+      {
+         // it is a fix in order to enable alt-tabbing back to top minimized window
+         // and being able to restore minimized windows from taskbar with only 1 mouse click
+         WindowUtils.FocusOnDekstop();
 
-      // hide mouse cursor to primary monitor (if feature is enabled and at least one window was minimized)
-      if (enableMouseMove && (minimizedWindowsCount > 0)) HandleMouseOut();
+         // hide mouse cursor to primary monitor (if feature is enabled and at least one window was minimized)
+         if (enableMouseMove && (minimizedWindowsCount > 0)) HandleMouseOut();
+      }
 
       // save the list of windows that were minimized
       BFS.ScriptSettings.WriteValue(MinimizedWindowsListSetting, minimizedWindows);
@@ -350,8 +371,16 @@ public static class DisplayFusionFunction
    {
       // bool keyPressed = BFS.Input.IsMouseDown("1;");
       bool keyPressed = BFS.Input.IsKeyDown(KEY_SHIFT);
-      // if (keyPressed) MessageBox.Show($"key is pressed");
-      // else MessageBox.Show($"key is NOT pressed");
+      if (debugPrintForceRestoreKey) MessageBox.Show($"ForceRestore key is" + (keyPressed ? "" : " NOT") + " pressed");
+
+      return keyPressed;
+   }
+
+   public static bool IsFocusModeRequested()
+   {
+      // bool keyPressed = BFS.Input.IsMouseDown("2;");
+      bool keyPressed = BFS.Input.IsKeyDown(KEY_CTRL);
+      if (debugPrintFocusModeKey) MessageBox.Show($"FocusMode key is" + (keyPressed ? "" : " NOT") + " pressed");
 
       return keyPressed;
    }
@@ -607,7 +636,7 @@ public static class DisplayFusionFunction
       {
          // ShowWindow(windowHandle, SW_MINIMIZE); // activates next window than currently minimized, pushes some windows at the end of alt-tab
          ShowWindow(windowHandle, SW_SHOWMINIMIZED); // leaves windows on top of alt-tab
-         // ShowWindow(windowHandle, SW_SHOWMINNOACTIVE); // pushes windows to back of alt-tab
+                                                     // ShowWindow(windowHandle, SW_SHOWMINNOACTIVE); // pushes windows to back of alt-tab
       }
       public static void RestoreWindow(IntPtr windowHandle)
       {
