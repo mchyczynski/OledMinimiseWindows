@@ -29,6 +29,9 @@ public static class DisplayFusionFunction
    private static readonly uint RESOLUTION_2K_WIDTH = 2560;
    private static readonly uint RESOLUTION_2K_HEIGHT = 1440;
    private static readonly uint MOUSE_RESTORE_THRESHOLD = 200;
+   private static readonly int SWEEP_SNAP_THRESHOLD = 150;
+   private static readonly double SWEEP_NO_RESIZE_THRESHOLD = 0.8;
+   private static readonly int TASKBAR_HEIGHT = 40;
 
    public static string KEY_SHIFT = "16";
    public static string KEY_CTRL = "17";
@@ -41,6 +44,7 @@ public static class DisplayFusionFunction
    private static readonly bool enableForceRestore = true;
    private static readonly bool enableFocusMode = true;
    private static readonly bool enableSweepMode = true;
+   private static readonly bool enableSweepModeSnap = true;
    private static readonly bool debugPrintDoMinRestore = enableDebugPrints && false;
    private static readonly bool debugPrintStartStop = enableDebugPrints && false;
    private static readonly bool debugPrintFindMonitorId = enableDebugPrints && false;
@@ -53,6 +57,8 @@ public static class DisplayFusionFunction
    private static readonly bool debugPrintFocusModeKey = enableDebugPrints && false;
    private static readonly bool debugPrintFocusMode = enableDebugPrints && false;
    private static readonly bool debugPrintSweepModeKey = enableDebugPrints && false;
+   private static readonly bool debugPrintSweepMode = enableDebugPrints && false;
+   private static readonly bool debugPrintSweepModeCalcPos = enableDebugPrints && false;
 
 
    private static List<string> classnameBlacklist = new List<string> {"DFTaskbar", "DFTitleBarWindow", "Shell_TrayWnd",
@@ -148,8 +154,9 @@ public static class DisplayFusionFunction
       // this will store the windows that we are minimizing so we can restore them later
       string minimizedWindows = "";
 
-      // get monitor ID of OLED monitor (assumption it is the only 4k monitor in the system)
+      // get monitor ID and bounds of OLED monitor
       uint monitorIdOled = GetOledMonitorID();
+      Rectangle monitorBoundsOled = BFS.Monitor.GetMonitorBoundsByID(monitorIdOled);
 
       // get windows to be minimized
       IntPtr[] windowsToMinimize = GetFilteredVisibleWindows(monitorIdOled);
@@ -157,12 +164,22 @@ public static class DisplayFusionFunction
       // check if focus mode was requested
       bool focusMode = IsFocusModeRequested();
 
-      // get monitor ID of sweep-target monitor
-      IntPtr monitorIdSweep = GetSweepTargetMonitorID;
+      // check if sweep mode was requested
+      bool sweepMode = IsSweepModeRequested();
+
+      // get monitor ID and bounds of sweep-target monitor
+      uint monitorIdSweep = GetSweepTargetMonitorID();
+      Rectangle monitorBoundsSweep = BFS.Monitor.GetMonitorBoundsByID(monitorIdSweep);
 
       // save handle to currently active window
       IntPtr activeWindowHandle = BFS.Window.GetFocusedWindow();
       if (debugPrintFocusMode) MessageBox.Show($"focus window found: {BFS.Window.GetText(activeWindowHandle)}");
+
+      // sweep mode in reverse order (the same as restoring) compared to minimizing windows
+      if (sweepMode)
+      {
+         Array.Reverse(windowsToMinimize);
+      }
 
       int minimizedWindowsCount = 0;
       // loop through all the visible windows on the monitor
@@ -176,16 +193,25 @@ public static class DisplayFusionFunction
             continue;
          }
 
-         if (debugPrintDoMinRestore) MessageBox.Show($"minimizing window {BFS.Window.GetText(window)}");
-         WindowUtils.MinimizeWindow(window);
-         minimizedWindowsCount += 1;
+         if (sweepMode)
+         {
+            if (debugPrintDoMinRestore) MessageBox.Show($"sweeping window {BFS.Window.GetText(window)}");
+            SweepWindow(window, monitorBoundsOled, monitorBoundsSweep);
+         }
+         else // normal minimizing
+         {
+            if (debugPrintDoMinRestore) MessageBox.Show($"minimizing window {BFS.Window.GetText(window)}");
+            WindowUtils.MinimizeWindow(window);
+         }
 
-         // add the window to the list of windows
+         // use variables for both minimizing and sweeping
+         minimizedWindowsCount += 1;
+         // add the window to the list of minimized windows
          minimizedWindows += window.ToInt64().ToString() + "|";
       }
 
-      // change focus and move mouse only when not in focus mode
-      if (!focusMode)
+      // change focus and move mouse only when not in focus mode and not sweeping
+      if (!focusMode && !sweepMode)
       {
          // it is a fix in order to enable alt-tabbing back to top minimized window
          // and being able to restore minimized windows from taskbar with only 1 mouse click
@@ -195,11 +221,22 @@ public static class DisplayFusionFunction
          if (ShoudlMoveMouse() && (minimizedWindowsCount > 0)) HandleMouseOut();
       }
 
-      // save the list of windows that were minimized
-      BFS.ScriptSettings.WriteValue(MinimizedWindowsListSetting, minimizedWindows);
+      if (sweepMode)
+      {
+         // save the list of windows that were swept
+         BFS.ScriptSettings.WriteValue(SweptdWindowsListSetting, minimizedWindows);
 
-      // set the script state to MinimizedState
-      BFS.ScriptSettings.WriteValue(ScriptStateSetting, MinimizedState);
+         // set the script sweep state to MinimizedState
+         BFS.ScriptSettings.WriteValue(ScriptStateSweepSetting, MinimizedState);
+      }
+      else // normal minimizing
+      {
+         // save the list of windows that were minimized
+         BFS.ScriptSettings.WriteValue(MinimizedWindowsListSetting, minimizedWindows);
+
+         // set the script state to MinimizedState
+         BFS.ScriptSettings.WriteValue(ScriptStateSetting, MinimizedState);
+      }
 
       if (debugPrintStartStop) MessageBox.Show($"finished MIN (minimized {minimizedWindowsCount}/{windowsToMinimize.Length} windows)");
 
@@ -359,6 +396,138 @@ public static class DisplayFusionFunction
       // clear stored mouse position
       BFS.ScriptSettings.DeleteValue(MousePositionXSetting);
       BFS.ScriptSettings.DeleteValue(MousePositionYSetting);
+   }
+
+   public static void SweepWindow(IntPtr windowHandle, Rectangle boundsFrom, Rectangle boundsTo)
+   {
+      if (debugPrintSweepMode) MessageBox.Show($"SweepMonitor:\nboundsFrom: {boundsFrom},\nboundsTo {boundsTo}");
+
+      Rectangle newPos = CalculateSweptWindowPos(WindowUtils.GetBounds(windowHandle), boundsFrom, boundsTo);
+      WindowUtils.SetSizeAndLocation(windowHandle, newPos.X, newPos.Y, newPos.Width, newPos.Height);
+      WindowUtils.PushToTop(windowHandle);
+
+      // WindowUtils.MaximizeWindow(windowHandle); // todo
+   }
+
+   public static Rectangle CalculateSweptWindowPos(Rectangle boundsWindow, Rectangle boundsFrom, Rectangle boundsTo)
+   {
+      Rectangle newWindowBounds = new Rectangle();
+
+      if ((boundsWindow.Width < SWEEP_NO_RESIZE_THRESHOLD * boundsTo.Width) ||
+          (boundsWindow.Height < SWEEP_NO_RESIZE_THRESHOLD * (boundsTo.Height - TASKBAR_HEIGHT)))
+      {
+         // small window in at least one direction, don't change size for now
+         newWindowBounds.Width = boundsWindow.Width;
+         newWindowBounds.Height = boundsWindow.Height;
+
+         // calculate how far is the windows from old monitor borders (ignore taskbar size because of autohide)
+         int leftDistOld = boundsWindow.X - boundsFrom.X;
+         int rightDistOld = (boundsFrom.X + boundsFrom.Width) - (boundsWindow.X + boundsWindow.Width);
+         int topDistOld = boundsWindow.Y - boundsFrom.Y;
+         int bottomDistOld = (boundsFrom.Y + boundsFrom.Height) - (boundsWindow.Y + boundsWindow.Height);
+
+         // calculate left-right (horizontal) and top-bottom (vertical) ratios of window position
+         double horizontalRatio = (double)leftDistOld / (leftDistOld + rightDistOld);
+         double verticalRatio = (double)topDistOld / (topDistOld + bottomDistOld);
+
+         // calculate how much free space there will be on new monitor outside of the window
+         int horizontalSpace = boundsTo.Width - newWindowBounds.Width;
+         int verticalSpace = boundsTo.Height - newWindowBounds.Height - TASKBAR_HEIGHT;
+
+         if (horizontalSpace > 0)
+         {
+            // set position to preserve left-right ratio from old monitor
+            newWindowBounds.X = boundsTo.X + (int)(horizontalRatio * horizontalSpace);
+         }
+         else
+         {
+            // there is no space left, max out window horizontally
+            newWindowBounds.X = boundsTo.X;
+            // override window witdth, it needs to be smaller
+            newWindowBounds.Width = boundsTo.Width;
+
+            // optionally snap top or bottom if window was resized horizontally
+            if (enableSweepModeSnap)
+            {
+               int topDistNew = newWindowBounds.Y - boundsTo.Y;
+               int bottomDistNew = (boundsTo.Y + boundsTo.Height - TASKBAR_HEIGHT) - (newWindowBounds.Y + newWindowBounds.Height);
+
+               if (topDistNew < SWEEP_SNAP_THRESHOLD)
+               {
+                  if (debugPrintSweepModeCalcPos) MessageBox.Show($"Snap top");
+                  newWindowBounds.Y = 0; // snap window to top, no size change
+               }
+
+               if (bottomDistNew < SWEEP_SNAP_THRESHOLD)
+               {
+                  if (debugPrintSweepModeCalcPos) MessageBox.Show($"Snap bottom");
+                  newWindowBounds.Y = boundsTo.Height - TASKBAR_HEIGHT - newWindowBounds.Height; // snap window to bottom, no size change
+               }
+
+               if (debugPrintSweepModeCalcPos) MessageBox.Show($"topDistNew {topDistNew}\nbottomDistNew {bottomDistNew}\n\n" +
+                                                $"newWindowBounds.Y {newWindowBounds.Y}");
+            }
+
+         }
+
+         if (verticalSpace > 0)
+         {
+            // set position to preserve top-bottom ratio from old monitor
+            newWindowBounds.Y = boundsTo.Y + (int)(verticalRatio * verticalSpace);
+         }
+         else
+         {
+            // if (debugPrintSweepModeCalcPos) MessageBox.Show($"Overriding vertical Y and Height");
+            // there is no space left, max out window vertically
+            newWindowBounds.Y = boundsTo.Y;
+            // override window height, it needs to be smaller
+            newWindowBounds.Height = boundsTo.Height - TASKBAR_HEIGHT;
+
+            // optionally snap left or right if window was resized vertically
+            if (enableSweepModeSnap)
+            {
+               int leftDistNew = newWindowBounds.X - boundsTo.X;
+               int rightDistNew = (boundsTo.X + boundsTo.Width) - (newWindowBounds.X + newWindowBounds.Width);
+
+               if (leftDistNew < SWEEP_SNAP_THRESHOLD)
+               {
+                  if (debugPrintSweepModeCalcPos) MessageBox.Show($"Snap left");
+                  newWindowBounds.X = 0; // snap window to left, no size change
+               }
+
+               if (rightDistNew < SWEEP_SNAP_THRESHOLD)
+               {
+                  if (debugPrintSweepModeCalcPos) MessageBox.Show($"Snap right");
+                  newWindowBounds.X = boundsTo.Width - newWindowBounds.Width; // snap window to right, no size change
+               }
+
+               if (debugPrintSweepModeCalcPos) MessageBox.Show($"leftDistNew {leftDistNew}\nrightDistNew {rightDistNew}\n\n" +
+                                                               $"newWindowBounds.X {newWindowBounds.X}");
+            }
+         }
+
+
+         if (debugPrintSweepModeCalcPos) MessageBox.Show($"\nboundsWindow\t{boundsWindow}\nboundsFrom\t{boundsFrom}\nboundsTo\t{boundsTo}\n\n" +
+                         $"leftDistOld {leftDistOld}\nrightDistOld {rightDistOld}\ntopDistOld {topDistOld}\nbottomDistOld {bottomDistOld}\n\n" +
+                         $"horizontalRatio {horizontalRatio}\nverticalRatio {verticalRatio}\n\n" +
+                         $"horizontalSpace {horizontalSpace}\nverticalSpace {verticalSpace}\n\n" +
+                         $"newWindowBounds.X {newWindowBounds.X}\nnewWindowBounds.Y {newWindowBounds.Y}\n\n" +
+                         $"newWindowBounds.Width {newWindowBounds.Width}\nnewWindowBounds.Height {newWindowBounds.Height}");
+      }
+      else
+      {
+         // set size to target monitor size (excluding taskbar)
+         newWindowBounds.X = boundsTo.X;
+         newWindowBounds.Y = boundsTo.Y;
+         newWindowBounds.Width = boundsTo.Width;
+         newWindowBounds.Height = boundsTo.Height - TASKBAR_HEIGHT;
+
+         if (debugPrintSweepModeCalcPos) MessageBox.Show($"\nboundsWindow\t{boundsWindow}\nboundsFrom\t{boundsFrom}\nboundsTo\t{boundsTo}\n\n" +
+                         $"newWindowBounds.X {newWindowBounds.X}\nboundsTarget.Y {newWindowBounds.Y}\n\n" +
+                         $"newWindowBounds.Width {newWindowBounds.Width}\nnewWindowBounds.Height {newWindowBounds.Height}");
+      }
+
+      return newWindowBounds;
    }
 
    public static uint GetOledMonitorID()
@@ -589,6 +758,15 @@ public static class DisplayFusionFunction
       [DllImport("user32.dll", CharSet = CharSet.Auto)]
       private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
+      [DllImport("user32.dll", SetLastError = true)]
+      [return: MarshalAs(UnmanagedType.Bool)]
+      private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags); // including shadow
+
+      [DllImport("user32.dll", SetLastError = true)]
+      [return: MarshalAs(UnmanagedType.Bool)]
+      private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect); // including shadow
+
+
       [Serializable, StructLayout(LayoutKind.Sequential)]
       public struct RECT
       {
@@ -618,6 +796,7 @@ public static class DisplayFusionFunction
 
       private static readonly int SW_SHOWNORMAL = 1;
       private static readonly int SW_SHOWMINIMIZED = 2;
+      private static readonly int SW_SHOWMAXIMIZED = 3; // SW_MAXIMIZE
       private static readonly int SW_SHOWNOACTIVATE = 4;
       private static readonly int SW_SHOW = 5;
       private static readonly int SW_MINIMIZE = 6;
@@ -626,6 +805,12 @@ public static class DisplayFusionFunction
       private static readonly int SW_RESTORE = 9;
       private static readonly int DWMWA_EXTENDED_FRAME_BOUNDS = 0x9;
       private static readonly uint MONITOR_DEFAULTTONEAREST = 2;
+      private static readonly uint SWP_NOSIZE = 0x0001;
+      private static readonly uint SWP_NOMOVE = 0x0002;
+      private static readonly uint SWP_NOACTIVATE = 0x0010;
+      private static readonly uint SWP_NOOWNERZORDER = 0x0200;
+      private static readonly uint SWP_NOZORDER = 0x0004;
+      private static readonly uint SWP_FRAMECHANGED = 0x0020;
 
       private static bool GetRectangleExcludingShadow(IntPtr handle, out RECT rect)
       {
@@ -637,6 +822,46 @@ public static class DisplayFusionFunction
          rect.Bottom--;
 
          return result >= 0;
+      }
+
+      private static Rectangle CompensateForShadow(IntPtr windowHandle, int x, int y, int w, int h)
+      {
+         RECT excludeShadow = new RECT();
+         RECT includeShadow = new RECT();
+
+         if (!GetRectangleExcludingShadow(windowHandle, out excludeShadow))
+         {
+            int errorCode = Marshal.GetLastWin32Error();
+            string text = BFS.Window.GetText(windowHandle);
+            MessageBox.Show($"ERROR CompensateForShadow-GetWindowRectangle windows API: {errorCode}\n\n" +
+                        $"text: |{text}|\n\n" +
+                        $"requested pos: x.{x} y.{y} w.{w} h.{h}");
+         }
+
+         if (!GetWindowRect(windowHandle, out includeShadow)) // including shadow
+         {
+            int errorCode = Marshal.GetLastWin32Error();
+            string text = BFS.Window.GetText(windowHandle);
+            MessageBox.Show($"ERROR CompensateForShadow-GetWindowRect windows API: {errorCode}\n\n" +
+                        $"text: |{text}|\n\n" +
+                        $"requested pos: x.{x} y.{y} w.{w} h.{h}");
+         }
+
+         RECT shadow = new RECT();
+         shadow.Left = Math.Abs(includeShadow.Left - excludeShadow.Left);//+1;
+         shadow.Right = Math.Abs(includeShadow.Right - excludeShadow.Right);
+         shadow.Top = Math.Abs(includeShadow.Top - excludeShadow.Top);// +1;
+         shadow.Bottom = Math.Abs(includeShadow.Bottom - excludeShadow.Bottom);//+1;
+
+         // compensate requested x, y, width and height with shadow
+         Rectangle result = new Rectangle(
+            x - shadow.Left, // windowX
+            y - shadow.Top, // windowY
+            w + shadow.Right + shadow.Left, // windowWidth
+            h + shadow.Bottom + shadow.Top // windowHeight
+         );
+
+         return result;
       }
 
       public static Rectangle GetBounds(IntPtr windowHandle)
@@ -700,12 +925,40 @@ public static class DisplayFusionFunction
          return default;
       }
 
+      public static void SetSizeAndLocation(IntPtr windowHandle, int x, int y, int w, int h)
+      {
+         Rectangle newPos = CompensateForShadow(windowHandle, x, y, w, h);
+
+         uint flags = SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOZORDER | SWP_FRAMECHANGED;
+
+         if (w == 0 && h == 0)
+         {
+
+            flags = flags | SWP_NOSIZE;
+         }
+
+         if (!SetWindowPos(windowHandle, windowHandle, newPos.X, newPos.Y, newPos.Width, newPos.Height, flags))
+         {
+            int errorCode = Marshal.GetLastWin32Error();
+            string text = BFS.Window.GetText(windowHandle);
+            MessageBox.Show($"ERROR SetSizeAndLocation-SetWindowPos windows API: {errorCode}\n\n" +
+                        $"text: |{text}|\n\n" +
+                        $"requested pos: x.{x} y.{y} w.{w} h.{h}");
+         }
+      }
+
       public static void MinimizeWindow(IntPtr windowHandle)
       {
          // ShowWindow(windowHandle, SW_MINIMIZE); // activates next window than currently minimized, pushes some windows at the end of alt-tab
          ShowWindow(windowHandle, SW_SHOWMINIMIZED); // leaves windows on top of alt-tab
          // ShowWindow(windowHandle, SW_SHOWMINNOACTIVE); // pushes windows to back of alt-tab
       }
+
+      public static void MaximizeWindow(IntPtr windowHandle)
+      {
+         ShowWindow(windowHandle, SW_SHOWMAXIMIZED);
+      }
+
       public static void RestoreWindow(IntPtr windowHandle)
       {
          ShowWindow(windowHandle, SW_RESTORE);
