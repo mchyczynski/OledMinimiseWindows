@@ -149,13 +149,16 @@ public static class DisplayFusionFunction
       string minimizedWindows = "";
 
       // get monitor ID of OLED monitor (assumption it is the only 4k monitor in the system)
-      uint monitorId = GetOledMonitorID();
+      uint monitorIdOled = GetOledMonitorID();
 
       // get windows to be minimized
-      IntPtr[] windowsToMinimize = GetFilteredVisibleWindows(monitorId);
+      IntPtr[] windowsToMinimize = GetFilteredVisibleWindows(monitorIdOled);
 
       // check if focus mode was requested
       bool focusMode = IsFocusModeRequested();
+
+      // get monitor ID of sweep-target monitor
+      IntPtr monitorIdSweep = GetSweepTargetMonitorID;
 
       // save handle to currently active window
       IntPtr activeWindowHandle = BFS.Window.GetFocusedWindow();
