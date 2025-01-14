@@ -360,6 +360,7 @@ public static class DisplayFusionFunction
 
    public static uint GetOledMonitorID()
    {
+      // assume OLED monitor is the first 4K monitor in the system
       foreach (uint id in BFS.Monitor.GetMonitorIDs())
       {
          Rectangle bounds = BFS.Monitor.GetMonitorBoundsByID(id);
@@ -371,6 +372,23 @@ public static class DisplayFusionFunction
       }
 
       MessageBox.Show($"ERROR! did not find monitor with 4K resolution");
+      return UInt32.MaxValue;
+   }
+
+   public static uint GetSweepTargetMonitorID()
+   {
+      // assume we sweep windows to the first 2K monitor we find
+      foreach (uint id in BFS.Monitor.GetMonitorIDs())
+      {
+         Rectangle bounds = BFS.Monitor.GetMonitorBoundsByID(id);
+         if (bounds.Width == RESOLUTION_2K_WIDTH && bounds.Height == RESOLUTION_2K_HEIGHT)
+         {
+            if (debugPrintFindMonitorId) MessageBox.Show($"found 2k monitor with ID: {id}");
+            return id;
+         }
+      }
+
+      MessageBox.Show($"ERROR! did not find monitor with 2K resolution");
       return UInt32.MaxValue;
    }
 
