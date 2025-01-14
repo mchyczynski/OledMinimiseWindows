@@ -15,6 +15,7 @@ using System.Runtime.InteropServices;
 public static class DisplayFusionFunction
 {
    private const string ScriptStateSetting = "OledMinimizerScriptState";
+   private const string ScriptStateSweepSetting = "OledMinimizerScriptStateSweep";
    private const string MinimizedWindowsListSetting = "OledMinimizerMinimizedWindowsList";
    private const string SweptdWindowsListSetting = "OledMinimizerSweptWindowsList";
    private const string MousePositionXSetting = "MousePositionXSetting";
@@ -65,7 +66,8 @@ public static class DisplayFusionFunction
    public static void Run(IntPtr windowHandle)
    {
       bool windowsAreVisible = CountWindowsToMinimize() > 0;
-      bool windowsWereMinimized = WindowsWereMinimized();
+      bool windowsWereMinimized = WereWindowsMinimized();
+      bool windowsWereSwept = WereWindowsSwept();
       bool forceRestore = ShouldForceRestore();
 
       if (forceRestore) // modifier key is pressed, never minimize
@@ -128,9 +130,15 @@ public static class DisplayFusionFunction
       }
    }
 
-   private static bool WindowsWereMinimized()
+   private static bool WereWindowsMinimized()
    {
       string setting = BFS.ScriptSettings.ReadValue(ScriptStateSetting);
+      return !string.IsNullOrEmpty(setting) && (setting.Equals(MinimizedState, StringComparison.Ordinal));
+   }
+
+   private static bool WereWindowsSwept()
+   {
+      string setting = BFS.ScriptSettings.ReadValue(ScriptStateSweepSetting);
       return !string.IsNullOrEmpty(setting) && (setting.Equals(MinimizedState, StringComparison.Ordinal));
    }
 
