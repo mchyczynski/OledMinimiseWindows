@@ -407,7 +407,21 @@ public static class DisplayFusionFunction
    {
       if (debugPrintSweepMode) MessageBox.Show($"SweepMonitor:\nboundsFrom: {boundsFrom},\nboundsTo {boundsTo}");
 
-      var result = CalculateSweptWindowPos(WindowUtils.GetBounds(windowHandle), boundsFrom, boundsTo);
+      // when window is already maximized restore it (so that it can be maximized on target screen)
+      // and treat it as if it's size would be the same as source monitor 
+      // (because GetBounds() function gives you window bounds from before maximizing it)
+      Rectangle windowBounds = new Rectangle(){};
+      if(BFS.Window.IsMaximized(windowHandle))
+      {
+         BFS.Window.Restore(windowHandle);
+         windowBounds = boundsFrom;
+      }
+      else
+      {
+         windowBounds = WindowUtils.GetBounds(windowHandle);
+      }
+
+      var result = CalculateSweptWindowPos(windowBounds, boundsFrom, boundsTo);
       Rectangle newPos = result.newWindowBounds;
       WindowUtils.SetSizeAndLocation(windowHandle, newPos.X, newPos.Y, newPos.Width, newPos.Height);
       WindowUtils.PushToTop(windowHandle);
