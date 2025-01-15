@@ -30,7 +30,7 @@ public static class DisplayFusionFunction
    private static readonly uint RESOLUTION_2K_HEIGHT = 1440;
    private static readonly uint MOUSE_RESTORE_THRESHOLD = 200;
    private static readonly int SWEEP_SNAP_THRESHOLD = 150;
-   private static readonly double SWEEP_NO_RESIZE_THRESHOLD = 0.8;
+   private static readonly double SWEEP_NO_RESIZE_THRESHOLD = 0.9;
    private static readonly int TASKBAR_HEIGHT = 40;
 
    public static string KEY_SHIFT = "16";
@@ -220,6 +220,11 @@ public static class DisplayFusionFunction
          // hide mouse cursor to primary monitor (if feature is enabled and at least one window was minimized)
          if (ShoudlMoveMouse() && (minimizedWindowsCount > 0)) HandleMouseOut();
       }
+      else if (focusMode && sweepMode)
+      {
+         // restore focus from swept windows (which got focus because of pushing on top for Z-reordering)
+         WindowUtils.FocusOnWindow(activeWindowHandle);
+      }
 
       if (sweepMode)
       {
@@ -402,19 +407,29 @@ public static class DisplayFusionFunction
    {
       if (debugPrintSweepMode) MessageBox.Show($"SweepMonitor:\nboundsFrom: {boundsFrom},\nboundsTo {boundsTo}");
 
-      Rectangle newPos = CalculateSweptWindowPos(WindowUtils.GetBounds(windowHandle), boundsFrom, boundsTo);
+      var result = CalculateSweptWindowPos(WindowUtils.GetBounds(windowHandle), boundsFrom, boundsTo);
+      Rectangle newPos = result.newWindowBounds;
       WindowUtils.SetSizeAndLocation(windowHandle, newPos.X, newPos.Y, newPos.Width, newPos.Height);
       WindowUtils.PushToTop(windowHandle);
 
-      // WindowUtils.MaximizeWindow(windowHandle); // todo
+      // maximize window when it is big enough
+      if (result.shouldMaximize)
+      {
+         System.Threading.Thread.Sleep(20);
+         WindowUtils.MaximizeWindow(windowHandle);
+      }
    }
 
-   public static Rectangle CalculateSweptWindowPos(Rectangle boundsWindow, Rectangle boundsFrom, Rectangle boundsTo)
+   public static (bool shouldMaximize, Rectangle newWindowBounds) CalculateSweptWindowPos(Rectangle boundsWindow, Rectangle boundsFrom, Rectangle boundsTo)
    {
       Rectangle newWindowBounds = new Rectangle();
+      bool shouldMaximize = false;
 
-      if ((boundsWindow.Width < SWEEP_NO_RESIZE_THRESHOLD * boundsTo.Width) ||
-          (boundsWindow.Height < SWEEP_NO_RESIZE_THRESHOLD * (boundsTo.Height - TASKBAR_HEIGHT)))
+      int maxWidth = (int)(SWEEP_NO_RESIZE_THRESHOLD * boundsTo.Width);
+      int maxHeight = (int)(SWEEP_NO_RESIZE_THRESHOLD * (boundsTo.Height - TASKBAR_HEIGHT));
+
+      if ((boundsWindow.Width < maxWidth) ||
+          (boundsWindow.Height < maxHeight))
       {
          // small window in at least one direction, don't change size for now
          newWindowBounds.Width = boundsWindow.Width;
@@ -516,18 +531,20 @@ public static class DisplayFusionFunction
       }
       else
       {
-         // set size to target monitor size (excluding taskbar)
-         newWindowBounds.X = boundsTo.X;
-         newWindowBounds.Y = boundsTo.Y;
-         newWindowBounds.Width = boundsTo.Width;
-         newWindowBounds.Height = boundsTo.Height - TASKBAR_HEIGHT;
+         // set size to max bounds below which windows are not resized
+         // this will set the size to which window will restore when unmaximizing
+         newWindowBounds.X = (boundsTo.Width - maxWidth)/2;
+         newWindowBounds.Y = (boundsTo.Height - maxHeight)/2;
+         newWindowBounds.Width = maxWidth;
+         newWindowBounds.Height = maxHeight;
+         shouldMaximize = true;
 
          if (debugPrintSweepModeCalcPos) MessageBox.Show($"\nboundsWindow\t{boundsWindow}\nboundsFrom\t{boundsFrom}\nboundsTo\t{boundsTo}\n\n" +
                          $"newWindowBounds.X {newWindowBounds.X}\nboundsTarget.Y {newWindowBounds.Y}\n\n" +
                          $"newWindowBounds.Width {newWindowBounds.Width}\nnewWindowBounds.Height {newWindowBounds.Height}");
       }
 
-      return newWindowBounds;
+      return (shouldMaximize, newWindowBounds);
    }
 
    public static uint GetOledMonitorID()
@@ -972,11 +989,16 @@ public static class DisplayFusionFunction
             MessageBox.Show($"ERROR Desktop window not found!");
             return;
          }
-         bool success = SetForegroundWindow(hWndDesktop);
+         FocusOnWindow(hWndDesktop);
+      }
+
+      public static void FocusOnWindow(IntPtr windowHandle)
+      {
+         bool success = SetForegroundWindow(windowHandle);
          if (!success)
          {
             int errorCode = Marshal.GetLastWin32Error();
-            MessageBox.Show($"FocusOnDekstop error: {errorCode}");
+            MessageBox.Show($"FocusOnWindow error: {errorCode}");
          }
       }
 
