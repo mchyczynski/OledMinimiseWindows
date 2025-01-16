@@ -410,8 +410,8 @@ public static class DisplayFusionFunction
       // when window is already maximized restore it (so that it can be maximized on target screen)
       // and treat it as if it's size would be the same as source monitor 
       // (because GetBounds() function gives you window bounds from before maximizing it)
-      Rectangle windowBounds = new Rectangle(){};
-      if(BFS.Window.IsMaximized(windowHandle))
+      Rectangle windowBounds = new Rectangle() { };
+      if (BFS.Window.IsMaximized(windowHandle))
       {
          BFS.Window.Restore(windowHandle);
          windowBounds = boundsFrom;
@@ -547,15 +547,18 @@ public static class DisplayFusionFunction
       {
          // set size to max bounds below which windows are not resized
          // this will set the size to which window will restore when unmaximizing
-         newWindowBounds.X = (boundsTo.Width - maxWidth)/2;
-         newWindowBounds.Y = (boundsTo.Height - maxHeight)/2;
+         newWindowBounds.X = boundsTo.X + (boundsTo.Width - maxWidth) / 2;
+         newWindowBounds.Y = boundsTo.Y + (boundsTo.Height - maxHeight) / 2;
          newWindowBounds.Width = maxWidth;
          newWindowBounds.Height = maxHeight;
          shouldMaximize = true;
 
-         if (debugPrintSweepModeCalcPos) MessageBox.Show($"\nboundsWindow\t{boundsWindow}\nboundsFrom\t{boundsFrom}\nboundsTo\t{boundsTo}\n\n" +
-                         $"newWindowBounds.X {newWindowBounds.X}\nboundsTarget.Y {newWindowBounds.Y}\n\n" +
-                         $"newWindowBounds.Width {newWindowBounds.Width}\nnewWindowBounds.Height {newWindowBounds.Height}");
+         if (debugPrintSweepModeCalcPos) MessageBox.Show($"\nboundsWindow\t{boundsWindow}\n" +
+                                             $"boundsFrom\t{boundsFrom}\n" +
+                                             $"boundsTo\t{boundsTo}\n\n" +
+                                             $"newWindowBounds\t{newWindowBounds}\n" +
+                                             $"maxWidth\t{maxWidth}\tmaxHeight\t{maxHeight}\n" +
+                                             $"shouldMaximize:\t{shouldMaximize}");
       }
 
       return (shouldMaximize, newWindowBounds);
@@ -586,7 +589,7 @@ public static class DisplayFusionFunction
          Rectangle bounds = BFS.Monitor.GetMonitorBoundsByID(id);
          if (bounds.Width == RESOLUTION_2K_WIDTH && bounds.Height == RESOLUTION_2K_HEIGHT)
          {
-            if (debugPrintFindMonitorId) MessageBox.Show($"found 2k monitor with ID: {id}");
+            if (debugPrintFindMonitorId) MessageBox.Show($"found 2k monitor with ID: {id}\nbounds: {bounds}");
             return id;
          }
       }
