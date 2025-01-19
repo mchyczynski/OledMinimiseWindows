@@ -20,8 +20,8 @@ public static class DisplayFusionFunction
    private const string SweptdWindowsListSetting = "OledMinimizerSweptWindowsList";
    private const string MousePositionXSetting = "MousePositionXSetting";
    private const string MousePositionYSetting = "MousePositionYSetting";
-   private const string RestoredState = "0";
-   private const string MinimizedState = "1";
+   private const string RevivedState = "0";
+   private const string HiddenState = "1";
 
    private static readonly uint RESOLUTION_4K_WIDTH = 3840;
    private static readonly uint RESOLUTION_4K_HEIGHT = 2160;
@@ -41,19 +41,19 @@ public static class DisplayFusionFunction
    private static readonly bool enableDebugPrints = true;
    private static readonly bool prioritizeMinimizeDefault = true;
    private static readonly bool keepRestoringDefault = true;
-   private static readonly bool enableForceRestore = true;
+   private static readonly bool enableForceRevive = true;
    private static readonly bool enableFocusMode = true;
    private static readonly bool enableSweepMode = true;
    private static readonly bool enableSweepModeSnap = true;
-   private static readonly bool debugPrintDoMinRestore = enableDebugPrints && false;
+   private static readonly bool debugPrintHideRevive = enableDebugPrints && false;
    private static readonly bool debugPrintStartStop = enableDebugPrints && false;
    private static readonly bool debugPrintFindMonitorId = enableDebugPrints && false;
    private static readonly bool debugPrintNoMonitorFound = enableDebugPrints && true;
    private static readonly bool debugWindowFiltering = enableDebugPrints && false;
    private static readonly bool debugPrintMoveCursor = enableDebugPrints && false;
-   private static readonly bool debugPrintDecideMinRestore = enableDebugPrints && false;
+   private static readonly bool debugPrintDecideMinRevive = enableDebugPrints && false;
    private static readonly bool debugPrintCountToMin = enableDebugPrints && false;
-   private static readonly bool debugPrintForceRestoreKey = enableDebugPrints && false;
+   private static readonly bool debugPrintForceReviveKey = enableDebugPrints && false;
    private static readonly bool debugPrintFocusModeKey = enableDebugPrints && false;
    private static readonly bool debugPrintFocusMode = enableDebugPrints && false;
    private static readonly bool debugPrintSweepModeKey = enableDebugPrints && false;
@@ -74,33 +74,33 @@ public static class DisplayFusionFunction
       bool windowsAreVisible = CountWindowsToMinimize() > 0;
       bool windowsWereMinimized = WereWindowsMinimized();
       bool windowsWereSwept = WereWindowsSwept();
-      bool forceRestore = ShouldForceRestore();
+      bool forceRevive = ShouldForceRevive();
 
-      if (forceRestore) // modifier key is pressed, never minimize
+      if (forceRevive) // modifier key is pressed, do not hide windows
       {
-         if (debugPrintDecideMinRestore) MessageBox.Show($"force restore, windows were" + (windowsWereMinimized ? "" : "NOT ") + " minimized previously");
-         // try restoring only saved windows first if there were any
-         int restoredCount = RestoreWindows(!windowsWereMinimized);
+         if (debugPrintDecideMinRevive) MessageBox.Show($"force revive, windows were" + (windowsWereMinimized ? "" : "NOT ") + " minimized previously");
+         // try reviving only saved windows first if there were any
+         int revivedCount = ReviveWindows(!windowsWereMinimized);
          // optionally restore all other minimized if saved windows were manually restored
-         if ((restoredCount < 1) && ShouldKeepRestoring() && windowsWereMinimized)
+         if ((revivedCount < 1) && ShouldKeepRestoring() && windowsWereMinimized)
          {
-            restoredCount = RestoreWindows(true); // restore all windows (not only saved but minimalized manually)
-            if (restoredCount < 1) MessageBox.Show($"There is no other windows to restore (todo remove)");
+            revivedCount = ReviveWindows(true); // restore all windows (not only saved but minimized manually)
+            if (revivedCount < 1) MessageBox.Show($"There is no other windows to restore (todo remove)");
          }
       }
       else if (!windowsWereMinimized && windowsAreVisible)
       {
          // nothing was previously minimized but there are visible windows, just minimize them
-         if (debugPrintDecideMinRestore) MessageBox.Show($"NOT windowsWereMinimized && windowsAreVisible");
-         int minimizedCount = MinimizeWindows();
-         if (minimizedCount < 1) MessageBox.Show($"ERROR no windows were minimized but should be!");
+         if (debugPrintDecideMinRevive) MessageBox.Show($"NOT windowsWereMinimized && windowsAreVisible");
+         int hiddenCount = HideWindows();
+         if (hiddenCount < 1) MessageBox.Show($"ERROR no windows were minimized but should be!");
       }
       else if (!windowsWereMinimized && !windowsAreVisible)
       {
          // nothing was previously minimized, nothing is visible, force all windows that may have been manually minimized to restore
-         if (debugPrintDecideMinRestore) MessageBox.Show($"NOT windowsWereMinimized && NOT windowsAreVisible");
-         int restoredCount = RestoreWindows(true); // force restore all windows
-         if (restoredCount < 1) MessageBox.Show($"No windows were restored but that may be ok if there was none at all (todo remove)"); // todo remove
+         if (debugPrintDecideMinRevive) MessageBox.Show($"NOT windowsWereMinimized && NOT windowsAreVisible");
+         int revivedCount = ReviveWindows(true); // force revive all windows
+         if (revivedCount < 1) MessageBox.Show($"No windows were restored but that may be ok if there was none at all (todo remove)"); // todo remove
       }
       else if (windowsWereMinimized && windowsAreVisible)
       {
@@ -108,27 +108,27 @@ public static class DisplayFusionFunction
          // decide if we should restore saved windows or minimize visible ones
          if (ShouldPrioritizeMinimize())
          {
-            if (debugPrintDecideMinRestore) MessageBox.Show($"windowsWereMinimized && windowsAreVisible && ShouldPrioritizeMinimize");
-            int minimizedCount = MinimizeWindows();
-            if (minimizedCount < 1) MessageBox.Show($"ERROR no windows were minimized but should be (prio min)!");
+            if (debugPrintDecideMinRevive) MessageBox.Show($"windowsWereMinimized && windowsAreVisible && ShouldPrioritizeMinimize");
+            int hiddenCount = HideWindows();
+            if (hiddenCount < 1) MessageBox.Show($"ERROR no windows were minimized but should be (prio min)!");
          }
          else // don't prioritize minimizing new windows and restore saved ones
          {
-            if (debugPrintDecideMinRestore) MessageBox.Show($"windowsWereMinimized && windowsAreVisible && NOT ShouldPrioritizeMinimize");
-            int restoredCount = RestoreWindows(false); // try restoring only saved windows
-            if ((restoredCount < 1) && ShouldKeepRestoring()) // optionally restore all other minimized if saved windows were manually restored
+            if (debugPrintDecideMinRevive) MessageBox.Show($"windowsWereMinimized && windowsAreVisible && NOT ShouldPrioritizeMinimize");
+            int revivedCount = ReviveWindows(false); // try reviving only saved windows
+            if ((revivedCount < 1) && ShouldKeepRestoring()) // optionally restore all other minimized if saved windows were manually restored
             {
-               restoredCount = RestoreWindows(true); // restore all windows (not only saved but minimalized manually)
-               if (restoredCount < 1) MessageBox.Show($"There is no other windows to restore (todo remove)");
+               revivedCount = ReviveWindows(true); // restore all windows (not only saved but minimalized manually)
+               if (revivedCount < 1) MessageBox.Show($"There is no other windows to restore (todo remove)");
             }
          }
       }
       else if (windowsWereMinimized && !windowsAreVisible)
       {
          // there were windows minimized and there are no new visible windows, just restore saved windows
-         if (debugPrintDecideMinRestore) MessageBox.Show($"windowsWereMinimized && NOT windowsAreVisible");
-         int restoredCount = RestoreWindows(false); // restore only saved windows
-         if (restoredCount < 1) MessageBox.Show($"ERROR no windows were restored but should be");
+         if (debugPrintDecideMinRevive) MessageBox.Show($"windowsWereMinimized && NOT windowsAreVisible");
+         int revivedCount = ReviveWindows(false); // restore only saved windows
+         if (revivedCount < 1) MessageBox.Show($"ERROR no windows were restored but should be");
       }
       else
       {
@@ -139,18 +139,18 @@ public static class DisplayFusionFunction
    private static bool WereWindowsMinimized()
    {
       string setting = BFS.ScriptSettings.ReadValue(ScriptStateSetting);
-      return !string.IsNullOrEmpty(setting) && (setting.Equals(MinimizedState, StringComparison.Ordinal));
+      return !string.IsNullOrEmpty(setting) && (setting.Equals(HiddenState, StringComparison.Ordinal));
    }
 
    private static bool WereWindowsSwept()
    {
       string setting = BFS.ScriptSettings.ReadValue(ScriptStateSweepSetting);
-      return !string.IsNullOrEmpty(setting) && (setting.Equals(MinimizedState, StringComparison.Ordinal));
+      return !string.IsNullOrEmpty(setting) && (setting.Equals(HiddenState, StringComparison.Ordinal));
    }
 
-   public static int MinimizeWindows()
+   public static int HideWindows()
    {
-      if (debugPrintStartStop) MessageBox.Show("start MIN");
+      if (debugPrintStartStop) MessageBox.Show("start HIDE");
       // this will store the windows that we are minimizing so we can restore them later
       string minimizedWindows = "";
 
@@ -188,19 +188,19 @@ public static class DisplayFusionFunction
          // if focus mode enabled skip focused window from list to minimize
          if (focusMode && window == activeWindowHandle)
          {
-            if (debugPrintDoMinRestore) MessageBox.Show($"skipping focus window {BFS.Window.GetText(window)}");
+            if (debugPrintHideRevive) MessageBox.Show($"skipping focus window {BFS.Window.GetText(window)}");
             minimizedWindowsCount += 1; // treat active window in focus mode as if it was minimized
             continue;
          }
 
          if (sweepMode)
          {
-            if (debugPrintDoMinRestore) MessageBox.Show($"sweeping window {BFS.Window.GetText(window)}");
+            if (debugPrintHideRevive) MessageBox.Show($"sweeping window {BFS.Window.GetText(window)}");
             SweepWindow(window, monitorBoundsOled, monitorBoundsSweep);
          }
          else // normal minimizing
          {
-            if (debugPrintDoMinRestore) MessageBox.Show($"minimizing window {BFS.Window.GetText(window)}");
+            if (debugPrintHideRevive) MessageBox.Show($"minimizing window {BFS.Window.GetText(window)}");
             WindowUtils.MinimizeWindow(window);
          }
 
@@ -231,45 +231,45 @@ public static class DisplayFusionFunction
          // save the list of windows that were swept
          BFS.ScriptSettings.WriteValue(SweptdWindowsListSetting, minimizedWindows);
 
-         // set the script sweep state to MinimizedState
-         BFS.ScriptSettings.WriteValue(ScriptStateSweepSetting, MinimizedState);
+         // set the script sweep state to HiddenState
+         BFS.ScriptSettings.WriteValue(ScriptStateSweepSetting, HiddenState);
       }
       else // normal minimizing
       {
          // save the list of windows that were minimized
          BFS.ScriptSettings.WriteValue(MinimizedWindowsListSetting, minimizedWindows);
 
-         // set the script state to MinimizedState
-         BFS.ScriptSettings.WriteValue(ScriptStateSetting, MinimizedState);
+         // set the script state to HiddenState
+         BFS.ScriptSettings.WriteValue(ScriptStateSetting, HiddenState);
       }
 
-      if (debugPrintStartStop) MessageBox.Show($"finished MIN (minimized {minimizedWindowsCount}/{windowsToMinimize.Length} windows)");
+      if (debugPrintStartStop) MessageBox.Show($"finished HIDE (minimized {minimizedWindowsCount}/{windowsToMinimize.Length} windows)");
 
       return minimizedWindowsCount;
    }
 
-   public static int RestoreWindows(bool forceRestoreAll)
+   public static int ReviveWindows(bool forceReviveAll)
    {
-      if (debugPrintStartStop) MessageBox.Show("start RESTORE");
+      if (debugPrintStartStop) MessageBox.Show("start REVERT");
 
       // First restore mouse cursor position if enabled
       if (ShoudlMoveMouse()) HandleMouseBack();
 
-      // get windows to be restored
-      List<IntPtr> windowsToRestore = new List<IntPtr>();
-      if (forceRestoreAll) // restore all windows on OLED monitor
+      // get windows to be revived
+      List<IntPtr> windowsToRevive = new List<IntPtr>();
+      if (forceReviveAll) // restore all windows on OLED monitor
       {
          // get monitor ID of OLED monitor (assumption it is the only 4k monitor in the system)
-         windowsToRestore = GetFilteredMinimizedWindows(GetOledMonitorID()).ToList();
+         windowsToRevive = GetFilteredMinimizedWindows(GetOledMonitorID()).ToList();
       }
       else // only restore windows previously minimized
       {
          // get the windows that we minimized previously
          string savedWindows = BFS.ScriptSettings.ReadValue(MinimizedWindowsListSetting);
 
-         string[] windowsToRestoreStrings = savedWindows.Split(new char[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
-         Array.Reverse(windowsToRestoreStrings);
-         foreach (string window in windowsToRestoreStrings)
+         string[] windowsToReviveStrings = savedWindows.Split(new char[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
+         Array.Reverse(windowsToReviveStrings);
+         foreach (string window in windowsToReviveStrings)
          {
             // try to turn the string into a long value
             // if we can't convert it, go to the next setting
@@ -277,7 +277,7 @@ public static class DisplayFusionFunction
             if (!Int64.TryParse(window, out windowHandleValue))
                continue;
 
-            windowsToRestore.Add(new IntPtr(windowHandleValue));
+            windowsToRevive.Add(new IntPtr(windowHandleValue));
          }
       }
 
@@ -291,20 +291,20 @@ public static class DisplayFusionFunction
          windowsToPushOnTop = GetFilteredVisibleWindows(GetOledMonitorID());
       }
 
-      int restoredWindowsCount = 0;
+      int revivedWindowsCount = 0;
       // loop through each window to restore
-      foreach (IntPtr windowHandle in windowsToRestore)
+      foreach (IntPtr windowHandle in windowsToRevive)
       {
          if (BFS.Window.IsMinimized(windowHandle))
          {
-            if (debugPrintDoMinRestore) MessageBox.Show($"restoring window {BFS.Window.GetText(new IntPtr(windowHandle))}");
+            if (debugPrintHideRevive) MessageBox.Show($"restoring window {BFS.Window.GetText(new IntPtr(windowHandle))}");
             WindowUtils.RestoreWindow(windowHandle);
             WindowUtils.PushToTop(windowHandle);
-            restoredWindowsCount += 1;
+            revivedWindowsCount += 1;
          }
          else
          {
-            if (debugPrintDoMinRestore) MessageBox.Show($"already restored window {BFS.Window.GetText(new IntPtr(windowHandle))}");
+            if (debugPrintHideRevive) MessageBox.Show($"already restored window {BFS.Window.GetText(new IntPtr(windowHandle))}");
          }
       }
 
@@ -314,7 +314,7 @@ public static class DisplayFusionFunction
          Array.Reverse(windowsToPushOnTop);
          foreach (IntPtr windowHandle in windowsToPushOnTop)
          {
-            if (debugPrintDoMinRestore) MessageBox.Show($"Pushing window {BFS.Window.GetText(new IntPtr(windowHandle))} on top (focus mode)");
+            if (debugPrintHideRevive) MessageBox.Show($"Pushing window {BFS.Window.GetText(new IntPtr(windowHandle))} on top (focus mode)");
             WindowUtils.PushToTop(windowHandle);
          }
       }
@@ -322,11 +322,11 @@ public static class DisplayFusionFunction
       // clear the windows that we saved
       BFS.ScriptSettings.WriteValue(MinimizedWindowsListSetting, string.Empty);
 
-      // set the script to RestoredState
-      BFS.ScriptSettings.WriteValue(ScriptStateSetting, RestoredState);
-      if (debugPrintStartStop) MessageBox.Show($"finished RESTORE (restored {restoredWindowsCount}/{windowsToRestore.Count} windows)");
+      // set the script to RevivedState
+      BFS.ScriptSettings.WriteValue(ScriptStateSetting, RevivedState);
+      if (debugPrintStartStop) MessageBox.Show($"finished REVERT (restored {revivedWindowsCount}/{windowsToRevive.Count} windows)");
 
-      return restoredWindowsCount;
+      return revivedWindowsCount;
    }
 
    public static void HandleMouseOut()
@@ -629,13 +629,13 @@ public static class DisplayFusionFunction
       return enableMouseMove && !IsFocusModeRequested();
    }
 
-   public static bool ShouldForceRestore()
+   public static bool ShouldForceRevive()
    {
       // bool keyPressed = BFS.Input.IsMouseDown("1;");
       bool keyPressed = BFS.Input.IsKeyDown(KEY_SHIFT);
-      if (debugPrintForceRestoreKey) MessageBox.Show($"ForceRestore key is" + (keyPressed ? "" : " NOT") + " pressed");
+      if (debugPrintForceReviveKey) MessageBox.Show($"ForceRevive key is" + (keyPressed ? "" : " NOT") + " pressed");
 
-      return keyPressed & enableForceRestore;
+      return keyPressed & enableForceRevive;
    }
 
    public static bool IsFocusModeRequested()
@@ -1021,7 +1021,7 @@ public static class DisplayFusionFunction
 
       public static void PushToTop(IntPtr windowHandle)
       {
-         if (debugPrintDoMinRestore) MessageBox.Show($"pushing\n|{BFS.Window.GetText(windowHandle)}|\non top");
+         if (debugPrintHideRevive) MessageBox.Show($"pushing\n|{BFS.Window.GetText(windowHandle)}|\non top");
          bool result = SetForegroundWindow(windowHandle);
          System.Threading.Thread.Sleep(30);
          if (!result)
