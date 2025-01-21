@@ -77,37 +77,33 @@ public static class DisplayFusionFunction
    public static void Run(IntPtr windowHandle)
    {
       CacheAll();
-      bool windowsAreVisible = CountWindowsToHide() > 0;
+      bool windowsToHideVisible = CountWindowsToHide() > 0; // without active window in focus mode
       bool windowsWereMinimized = WereWindowsMinimized();
       bool windowsWereSwept = WereWindowsSwept();
-      bool windowsWereHiddenEver = windowsWereMinimized || windowsWereSwept;
       bool windowsWereHiddenCurrentMode = (!IsSweepModeRequested() && windowsWereMinimized) ||
                                           (IsSweepModeRequested() && windowsWereSwept);
 
       string debugInfo = $"IsForceReviveRequested: {IsForceReviveRequested()}\n" +
                          $"IsFocusModeRequested: {IsFocusModeRequested()}\n" +
                          $"IsSweepModeRequested: {IsSweepModeRequested()}\n\n" +
-                         $"windowsAreVisible: {windowsAreVisible}\n" +
+                         $"windowsToHideVisible: {windowsToHideVisible}\n" +
                          $"windowsWereMinimized: {windowsWereMinimized}\n" +
                          $"windowsWereSwept: {windowsWereSwept}\n\n" +
-                         $"windowsWereHiddenEver: {windowsWereHiddenEver}\n" +
                          $"windowsWereHiddenCurrentMode: {windowsWereHiddenCurrentMode}";
 
       if (IsForceReviveRequested())
       {
          if (debugPrintDecideMinRevive) MessageBox.Show($"Force revive\n\n{debugInfo}");
-         // bool forceAllWindowsRevive = !windowsWereHidden;
          HandleReviving(false);
-         // todo ShouldKeepRevivingOnForce()??? inside HandleReviving?
       }
       else // no forceRevive
       {
-         if (windowsAreVisible && !windowsWereHiddenCurrentMode)
+         if (windowsToHideVisible && !windowsWereHiddenCurrentMode)
          {
             if (debugPrintDecideMinRevive) MessageBox.Show($"Visible and NOT hidden\n\n{debugInfo}");
             HandleHiding();
          }
-         else if (windowsAreVisible && windowsWereHiddenCurrentMode)
+         else if (windowsToHideVisible && windowsWereHiddenCurrentMode)
          {
             if (ShouldPrioritizeHiding())
             {
@@ -118,85 +114,23 @@ public static class DisplayFusionFunction
             {
                if (debugPrintDecideMinRevive) MessageBox.Show($"Visible and hidden (NO prio hide)\n\n{debugInfo}");
                HandleReviving(false); // ignore visible windows and revive saved ones
-               // todo is ShouldKeepRevivingOnForce() good idea here?
             }
          }
-         else if (!windowsAreVisible && windowsWereHiddenCurrentMode)
+         else if (!windowsToHideVisible && windowsWereHiddenCurrentMode)
          {
             if (debugPrintDecideMinRevive) MessageBox.Show($"NOT visible and hidden\n\n{debugInfo}");
             HandleReviving(false); // revive saved windows only
          }
-         else if (!windowsAreVisible && !windowsWereHiddenCurrentMode)
+         else if (!windowsToHideVisible && !windowsWereHiddenCurrentMode)
          {
             if (debugPrintDecideMinRevive) MessageBox.Show($"NOT visible and NOT hidden\n\nDoing Nothing!\n\n{debugInfo}");
-            // HandleReviving(true); // force revive all windows
-            // do nothing 
+            // HandleReviving(true); // todo force revive all windows or do nothing?
          }
          else
          {
             MessageBox.Show($"ERROR else state not expected!");
          }
       }
-
-
-      // if (forceRevive) // modifier key is pressed, do not hide windows
-      // {
-      //    if (debugPrintDecideMinRevive) MessageBox.Show($"force revive, windows were" + (windowsWereMinimized ? "" : "NOT ") + " minimized previously");
-      //    // try reviving only saved windows first if there were any
-      //    int revivedCount = HandleReviving(!windowsWereMinimized);
-      //    // optionally restore all other minimized if saved windows were manually restored
-      //    if ((revivedCount < 1) && ShouldKeepRevivingOnForce() && windowsWereMinimized)
-      //    {
-      //       revivedCount = HandleReviving(true); // restore all windows (not only saved but minimized manually)
-      //       if (revivedCount < 1) MessageBox.Show($"There is no other windows to restore (todo remove)");
-      //    }
-      // }
-      // else if (!windowsWereMinimized && windowsAreVisible)
-      // {
-      //    // nothing was previously minimized but there are visible windows, just minimize them
-      //    if (debugPrintDecideMinRevive) MessageBox.Show($"NOT windowsWereMinimized && windowsAreVisible");
-      //    int hiddenCount = HandleHiding();
-      //    if (hiddenCount < 1) MessageBox.Show($"ERROR no windows were minimized but should be!");
-      // }
-      // else if (!windowsWereMinimized && !windowsAreVisible)
-      // {
-      //    // nothing was previously minimized, nothing is visible, force all windows that may have been manually minimized to restore
-      //    if (debugPrintDecideMinRevive) MessageBox.Show($"NOT windowsWereMinimized && NOT windowsAreVisible");
-      //    int revivedCount = HandleReviving(true); // force revive all windows
-      //    if (revivedCount < 1) MessageBox.Show($"No windows were restored but that may be ok if there was none at all (todo remove)"); // todo remove
-      // }
-      // else if (windowsWereMinimized && windowsAreVisible)
-      // {
-      //    // there were windows minimized but there are also manually restored or new windows visible
-      //    // decide if we should restore saved windows or minimize visible ones
-      //    if (ShouldPrioritizeHiding())
-      //    {
-      //       if (debugPrintDecideMinRevive) MessageBox.Show($"windowsWereMinimized && windowsAreVisible && ShouldPrioritizeHiding");
-      //       int hiddenCount = HandleHiding();
-      //       if (hiddenCount < 1) MessageBox.Show($"ERROR no windows were minimized but should be (prio min)!");
-      //    }
-      //    else // don't prioritize minimizing new windows and restore saved ones
-      //    {
-      //       if (debugPrintDecideMinRevive) MessageBox.Show($"windowsWereMinimized && windowsAreVisible && NOT ShouldPrioritizeHiding");
-      //       int revivedCount = HandleReviving(false); // try reviving only saved windows
-      //       if ((revivedCount < 1) && ShouldKeepRevivingOnForce()) // optionally restore all other minimized if saved windows were manually restored
-      //       {
-      //          revivedCount = HandleReviving(true); // restore all windows (not only saved but minimalized manually)
-      //          if (revivedCount < 1) MessageBox.Show($"There is no other windows to restore (todo remove)");
-      //       }
-      //    }
-      // }
-      // else if (windowsWereMinimized && !windowsAreVisible)
-      // {
-      //    // there were windows minimized and there are no new visible windows, just restore saved windows
-      //    if (debugPrintDecideMinRevive) MessageBox.Show($"windowsWereMinimized && NOT windowsAreVisible");
-      //    int revivedCount = HandleReviving(false); // restore only saved windows
-      //    if (revivedCount < 1) MessageBox.Show($"ERROR no windows were restored but should be");
-      // }
-      // else
-      // {
-      //    MessageBox.Show($"ERROR else state not expected!");
-      // }
    }
 
    private static bool WereWindowsMinimized()
@@ -437,12 +371,7 @@ public static class DisplayFusionFunction
       {
          // get the windows that we swept previously
          string savedWindows = BFS.ScriptSettings.ReadValue(SweptdWindowsListSetting);
-
          string[] windowsToReviveStrings = savedWindows.Split(new char[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
-         //MessageBox.Show($"GetListOfWindowsToUnsweep windowsToReviveStrings:\n{string.Join(", ", windowsToReviveStrings)}"); // todo
-
-         // // unsweep windows in reverse order than minimizing
-         // Array.Reverse(windowsToReviveStrings);
 
          // parse window handles from string to int
          // todo add saving and parsing original window position
@@ -455,7 +384,6 @@ public static class DisplayFusionFunction
             // check if saved window handle is still valid (e.g. window wasn't closed in the meantime)
             if (!WindowUtils.IsWindowValid(new IntPtr(windowHandleValue))) continue;
 
-            //MessageBox.Show($"GetListOfWindowsToUnsweep\nstring: {string.Join(", ", windowsToReviveStrings)}\n\nadding:\n{windowHandleValue}\nparsed from: {window}"); // todo
             windowsToUnsweep.Add(new IntPtr(windowHandleValue));
          }
       }
@@ -493,7 +421,6 @@ public static class DisplayFusionFunction
 
    public static int UnsweepWindows(IntPtr[] windowsToUnsweep)
    {
-      // todo fix unsweeping saved but closed (not existing) windows
       // get bounds of OLED (un-sweep-targer) monitor
       Rectangle monitorBoundsUnsweep = BFS.Monitor.GetMonitorBoundsByID(GetOledMonitorID());
 
@@ -503,7 +430,7 @@ public static class DisplayFusionFunction
       {
          if (debugPrintHideRevive) MessageBox.Show($"[TODO] unsweeping window {BFS.Window.GetText(new IntPtr(windowHandle))}");
 
-         // todo how to unsweep??
+         // todo how to unsweep correctly? for now just sweep from current to OLED monitor
          SweepOneWindow(windowHandle, monitorBoundsUnsweep);
          unsweptWindowsCount += 1;
       }
@@ -514,7 +441,6 @@ public static class DisplayFusionFunction
       // set the script to RevivedState
       BFS.ScriptSettings.WriteValue(ScriptStateSweepSetting, RevivedState);
       return unsweptWindowsCount;
-
    }
 
    public static void FixZorderAfterReviveInFocusMode(IntPtr[] windowsToPushOnTop)
@@ -1000,8 +926,7 @@ public static class DisplayFusionFunction
       Rectangle windowRect = WindowUtils.GetBounds(windowHandle);
       if (windowRect.Width <= 0 || windowRect.Height <= 0)
       {
-         // todo is it needed? remove or add if(debugWindowFiltering) 
-         MessageBox.Show($"Filtered out windows wrong size (w{windowRect.Width}, h{windowRect.Height}). classname: {classname}, text: {text})");
+         if (debugWindowFiltering) MessageBox.Show($"Filtered out windows wrong size (w{windowRect.Width}, h{windowRect.Height}). classname: {classname}, text: {text})");
          return true;
       }
 
