@@ -35,6 +35,7 @@ public static class DisplayFusionFunction
    private static readonly uint RESOLUTION_2K_HEIGHT = 1440;
    private static readonly uint MOUSE_RESTORE_THRESHOLD = 200;
    private static readonly int SWEEP_SNAP_THRESHOLD = 150;
+   private static readonly int SWEEP_SNAP_HALFSPLIT_THRESHOLD = 500;
    private static readonly double SWEEP_NO_RESIZE_THRESHOLD = 0.9;
    private static readonly int TASKBAR_HEIGHT = 40;
 
@@ -50,6 +51,7 @@ public static class DisplayFusionFunction
    private static readonly bool enableFocusMode = true;
    private static readonly bool enableSweepMode = true;
    private static readonly bool enableSweepModeSnap = true;
+   private static readonly bool enableSweepModeSnapHalfSplit = true;
    private static readonly bool debugPrintHideRevive = enableDebugPrints && false;
    private static readonly bool debugPrintStartStop = enableDebugPrints && false;
    private static readonly bool debugPrintFindMonitorId = enableDebugPrints && false;
@@ -577,7 +579,7 @@ public static class DisplayFusionFunction
          newWindowBounds.Width = boundsWindow.Width;
          newWindowBounds.Height = boundsWindow.Height;
 
-         // calculate how far is the windows from old monitor borders (ignore taskbar size because of autohide)
+         // calculate how far is the window from old monitor borders (ignore taskbar size because of autohide)
          int leftDistOld = boundsWindow.X - boundsFrom.X + 1;
          int rightDistOld = (boundsFrom.X + boundsFrom.Width) - (boundsWindow.X + boundsWindow.Width) + 1;
          int topDistOld = boundsWindow.Y - boundsFrom.Y + 1;
@@ -596,7 +598,7 @@ public static class DisplayFusionFunction
             // set position to preserve left-right ratio from old monitor
             newWindowBounds.X = boundsTo.X + (int)(horizontalRatio * horizontalSpace);
          }
-         else
+         else // horizontalSpace < 0
          {
             // there is no space left, max out window horizontally
             newWindowBounds.X = boundsTo.X;
@@ -632,9 +634,8 @@ public static class DisplayFusionFunction
             // set position to preserve top-bottom ratio from old monitor
             newWindowBounds.Y = boundsTo.Y + (int)(verticalRatio * verticalSpace);
          }
-         else
+         else // verticalSpace < 0
          {
-            // if (debugPrintSweepModeCalcPos) MessageBox.Show($"Overriding vertical Y and Height");
             // there is no space left, max out window vertically
             newWindowBounds.Y = boundsTo.Y;
             // override window height, it needs to be smaller
@@ -646,16 +647,33 @@ public static class DisplayFusionFunction
                int leftDistNew = newWindowBounds.X - boundsTo.X;
                int rightDistNew = (boundsTo.X + boundsTo.Width) - (newWindowBounds.X + newWindowBounds.Width);
 
+               // check if old window width was near to half split of the source monitor
+               bool widthEligibleForHalfSplit = boundsWindow.Width < (boundsFrom.Width / 2 + SWEEP_SNAP_HALFSPLIT_THRESHOLD) &&
+                                                boundsWindow.Width > (boundsFrom.Width / 2 - SWEEP_SNAP_HALFSPLIT_THRESHOLD);
+
                if (leftDistNew < SWEEP_SNAP_THRESHOLD)
                {
                   if (debugPrintSweepModeCalcPos) MessageBox.Show($"Snap left");
                   newWindowBounds.X = 0; // snap window to left, no size change
+
+                  if (enableSweepModeSnapHalfSplit && widthEligibleForHalfSplit)
+                  {
+                     if (debugPrintSweepModeCalcPos) MessageBox.Show($"Snap to vertical half split on right");
+                     newWindowBounds.Width = boundsTo.Width / 2;
+                  }
                }
 
                if (rightDistNew < SWEEP_SNAP_THRESHOLD)
                {
                   if (debugPrintSweepModeCalcPos) MessageBox.Show($"Snap right");
-                  newWindowBounds.X = boundsTo.Width - newWindowBounds.Width; // snap window to right, no size change
+
+                  if (enableSweepModeSnapHalfSplit && widthEligibleForHalfSplit)
+                  {
+                     if (debugPrintSweepModeCalcPos) MessageBox.Show($"Snap to vertical half split on left");
+                     newWindowBounds.Width = boundsTo.Width / 2;
+                  }
+
+                  newWindowBounds.X = boundsTo.Width - newWindowBounds.Width; // snap window to right after optional size change
                }
 
                if (debugPrintSweepModeCalcPos) MessageBox.Show($"leftDistNew {leftDistNew}\nrightDistNew {rightDistNew}\n\n" +
