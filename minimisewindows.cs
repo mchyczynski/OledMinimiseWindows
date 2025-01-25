@@ -26,7 +26,7 @@ public static class DisplayFusionFunction
    private static bool ForceReviveRequestedCache = false;
    private static bool FocusModeRequestedCache = false;
    private static bool SweepModeRequestedCache = false;
-   private static IntPtr ActiveWindowCache = IntPtr.Zero;
+   private static IntPtr ActiveWindowHandleCache = IntPtr.Zero;
 
    private static readonly uint RESOLUTION_4K_WIDTH = 3840;
    private static readonly uint RESOLUTION_4K_HEIGHT = 2160;
@@ -52,6 +52,7 @@ public static class DisplayFusionFunction
    private static readonly bool enableSweepMode = true;
    private static readonly bool enableSweepModeSnap = true;
    private static readonly bool enableSweepModeSnapHalfSplit = true;
+   private static readonly bool enableBoundingBoxMode = true;
    private static readonly bool debugPrintHideRevive = enableDebugPrints && false;
    private static readonly bool debugPrintStartStop = enableDebugPrints && false;
    private static readonly bool debugPrintFindMonitorId = enableDebugPrints && false;
@@ -79,7 +80,9 @@ public static class DisplayFusionFunction
    public static void Run(IntPtr windowHandle)
    {
       CacheAll();
-      bool windowsToHideVisible = CountWindowsToHide() > 0; // without active window in focus mode
+
+      IntPtr[] windowsToHide = GetWindowsToHide(GetOledMonitorID());
+      bool windowsToHidePresent = windowsToHide.Length > 0;
       bool windowsWereMinimized = WereWindowsMinimized();
       bool windowsWereSwept = WereWindowsSwept();
       bool windowsWereHiddenCurrentMode = (!IsSweepModeRequested() && windowsWereMinimized) ||
@@ -88,7 +91,7 @@ public static class DisplayFusionFunction
       string debugInfo = $"IsForceReviveRequested: {IsForceReviveRequested()}\n" +
                          $"IsFocusModeRequested: {IsFocusModeRequested()}\n" +
                          $"IsSweepModeRequested: {IsSweepModeRequested()}\n\n" +
-                         $"windowsToHideVisible: {windowsToHideVisible}\n" +
+                         $"windowsToHidePresent: {windowsToHidePresent}\n" +
                          $"windowsWereMinimized: {windowsWereMinimized}\n" +
                          $"windowsWereSwept: {windowsWereSwept}\n\n" +
                          $"windowsWereHiddenCurrentMode: {windowsWereHiddenCurrentMode}";
@@ -100,37 +103,37 @@ public static class DisplayFusionFunction
       }
       else // no forceRevive
       {
-         if (windowsToHideVisible && !windowsWereHiddenCurrentMode)
+         if (windowsToHidePresent && !windowsWereHiddenCurrentMode)
          {
-            if (debugPrintDecideMinRevive) MessageBox.Show($"Visible and NOT hidden\n\n{debugInfo}");
-            HandleHiding();
+            if (debugPrintDecideMinRevive) MessageBox.Show($"NOTHING to hide and NOT hidden\n\n{debugInfo}");
+            HandleHiding(windowsToHide);
          }
-         else if (windowsToHideVisible && windowsWereHiddenCurrentMode)
+         else if (windowsToHidePresent && windowsWereHiddenCurrentMode)
          {
             if (ShouldPrioritizeHiding())
             {
-               if (debugPrintDecideMinRevive) MessageBox.Show($"Visible and hidden (prio hide)\n\n{debugInfo}");
-               HandleHiding(); // ignore saved windows and hide visible ones
+               if (debugPrintDecideMinRevive) MessageBox.Show($"PRESENT to hide and WERE hidden (prio hide)\n\n{debugInfo}");
+               HandleHiding(windowsToHide); // ignore saved windows and hide visible ones
             }
             else
             {
-               if (debugPrintDecideMinRevive) MessageBox.Show($"Visible and hidden (NO prio hide)\n\n{debugInfo}");
+               if (debugPrintDecideMinRevive) MessageBox.Show($"PRESENT to hide and WERE hidden (NO prio hide)\n\n{debugInfo}");
                HandleReviving(false); // ignore visible windows and revive saved ones
             }
          }
-         else if (!windowsToHideVisible && windowsWereHiddenCurrentMode)
+         else if (!windowsToHidePresent && windowsWereHiddenCurrentMode)
          {
-            if (debugPrintDecideMinRevive) MessageBox.Show($"NOT visible and hidden\n\n{debugInfo}");
+            if (debugPrintDecideMinRevive) MessageBox.Show($"NOTHING to hide and WERE hidden\n\n{debugInfo}");
             HandleReviving(false); // revive saved windows only
          }
-         else if (!windowsToHideVisible && !windowsWereHiddenCurrentMode)
+         else if (!windowsToHidePresent && !windowsWereHiddenCurrentMode)
          {
-            if (debugPrintDecideMinRevive) MessageBox.Show($"NOT visible and NOT hidden\n\nDoing Nothing!\n\n{debugInfo}");
+            if (debugPrintDecideMinRevive) MessageBox.Show($"NOTHING to hide and NOT hidden\n\nDoing Nothing!\n\n{debugInfo}");
             // HandleReviving(true); // todo force revive all windows or do nothing?
          }
          else
          {
-            MessageBox.Show($"ERROR else state not expected!");
+            MessageBox.Show($"ERROR <min> else state not expected!");
          }
       }
    }
@@ -147,57 +150,38 @@ public static class DisplayFusionFunction
       return !string.IsNullOrEmpty(setting) && (setting.Equals(HiddenState, StringComparison.Ordinal));
    }
 
-   public static void HandleHiding()
+   public static void HandleHiding(IntPtr[] windowsToHide)
    {
       if (debugPrintStartStop) MessageBox.Show("start HIDE");
-
-      // get monitor ID and bounds of OLED monitor
-      uint monitorIdOled = GetOledMonitorID();
-      // Rectangle monitorBoundsOled = BFS.Monitor.GetMonitorBoundsByID(monitorIdOled);
-
-      // get windows to be hidden
-      IntPtr[] windowsToHide = GetFilteredVisibleWindows(monitorIdOled);
-
-      // save handle to currently active window
-      IntPtr activeWindowHandle = GetCachedActiveWindow();
-      if (debugPrintFocusMode) MessageBox.Show($"focus window found: {BFS.Window.GetText(activeWindowHandle)}");
 
       int count = 0;
       if (IsSweepModeRequested())
       {
-         count = SweepWindows(windowsToHide, activeWindowHandle);
+         count = SweepWindows(windowsToHide);
       }
       else
       {
-         count = MinimizeWindows(windowsToHide, activeWindowHandle);
+         count = MinimizeWindows(windowsToHide);
       }
 
       // hide mouse cursor to primary monitor
       if (ShoudlMoveMouse() && (count > 0)) HandleMouseOut();
    }
 
-   public static int MinimizeWindows(IntPtr[] windowsToMinimize, IntPtr activeWindowHandle)
+   public static int MinimizeWindows(IntPtr[] windowsToMinimize)
    {
       // this will store the windows that we are minimizing so we can restore them later
       string minimizedWindowsSaveList = "";
 
+      // loop through all windows to minimize
       int minimizedWindowsCount = 0;
-      // loop through all the visible windows on the monitor
       foreach (IntPtr window in windowsToMinimize)
       {
-         // if focus mode enabled skip focused window from list to minimize
-         if (IsFocusModeRequested() && window == activeWindowHandle)
-         {
-            if (debugPrintHideRevive) MessageBox.Show($"skipping focused window {BFS.Window.GetText(window)}");
-            minimizedWindowsCount += 1; // treat active window in focus mode as if it was minimized
-            continue;
-         }
 
          if (debugPrintHideRevive) MessageBox.Show($"minimizing window {BFS.Window.GetText(window)}");
          WindowUtils.MinimizeWindow(window);
-
-         // use variables for both minimizing and sweeping
          minimizedWindowsCount += 1;
+
          // add the window to the list of minimized windows
          minimizedWindowsSaveList += window.ToInt64().ToString() + "|";
       }
@@ -221,7 +205,7 @@ public static class DisplayFusionFunction
       return minimizedWindowsCount;
    }
 
-   public static int SweepWindows(IntPtr[] windowsToSweep, IntPtr activeWindowHandle)
+   public static int SweepWindows(IntPtr[] windowsToSweep)
    {
       // get bounds of sweep-target monitor
       Rectangle monitorBoundsSweep = BFS.Monitor.GetMonitorBoundsByID(GetSweepTargetMonitorID());
@@ -232,22 +216,17 @@ public static class DisplayFusionFunction
       // this will store the windows that we are sweepping so we can revive them later
       string sweptWindowsSaveList = "";
 
+      // calculate source bounds: monitor or bounding box of all windows
+      Rectangle sourceBounds = CalculateSourceBounds(windowsToSweep);
+
+      // loop through all windows to be swept
       int sweptWindowsCount = 0;
-      // loop through all the visible windows on the monitor
       foreach (IntPtr windowHandle in windowsToSweep)
       {
-         // if focus mode enabled skip focused windowHandle from list to minimize
-         if (IsFocusModeRequested() && windowHandle == activeWindowHandle)
-         {
-            if (debugPrintHideRevive) MessageBox.Show($"skipping focused window {BFS.Window.GetText(windowHandle)}");
-            sweptWindowsCount += 1; // treat active window in focus mode as if it was swept
-            continue;
-         }
-
          if (debugPrintHideRevive) MessageBox.Show($"sweeping window {BFS.Window.GetText(windowHandle)}");
-         SweepOneWindow(windowHandle, /*monitorBoundsOled,*/ monitorBoundsSweep);
-
+         SweepOneWindow(windowHandle, sourceBounds, monitorBoundsSweep);
          sweptWindowsCount += 1;
+
          // add the window to the list of swept windows
          sweptWindowsSaveList += windowHandle.ToInt64().ToString() + "|";
       }
@@ -255,7 +234,7 @@ public static class DisplayFusionFunction
       if (IsFocusModeRequested())
       {
          // restore focus from swept windows (which got focus because of pushing on top for Z-reordering)
-         WindowUtils.FocusOnWindow(activeWindowHandle);
+         WindowUtils.FocusOnWindow(GetCachedActiveWindow());
       }
       // focus and move mouse only when not in focus mode and not sweeping
       else /*if (!sweepMode)*/
@@ -362,15 +341,15 @@ public static class DisplayFusionFunction
 
    public static IntPtr[] GetListOfWindowsToUnsweep(bool forceReviveAll)
    {
-      List<IntPtr> windowsToUnsweep = new List<IntPtr>();
-
-      if (forceReviveAll) // "unsweep" all windows on sweep-target monitor 
+      if (forceReviveAll) // "unsweep" all windows from sweep-target monitor 
       {
          // forceRevive for sweep is moving all windows from sweep-target to OLED regardless whether they were ever swept or not
-         windowsToUnsweep = GetFilteredVisibleWindows(GetSweepTargetMonitorID()).ToList();
+         return GetWindowsToHide(GetSweepTargetMonitorID());
       }
       else // only unsweep windows previously swept
       {
+         List<IntPtr> windowsToUnsweep = new List<IntPtr>();
+
          // get the windows that we swept previously
          string savedWindows = BFS.ScriptSettings.ReadValue(SweptdWindowsListSetting);
          string[] windowsToReviveStrings = savedWindows.Split(new char[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
@@ -388,9 +367,10 @@ public static class DisplayFusionFunction
 
             windowsToUnsweep.Add(new IntPtr(windowHandleValue));
          }
+         return windowsToUnsweep.ToArray();
       }
 
-      return windowsToUnsweep.ToArray();
+      return new IntPtr[0]; // should never reach here
    }
 
    public static int RestoreWindows(IntPtr[] windowsToRestore)
@@ -426,6 +406,9 @@ public static class DisplayFusionFunction
       // get bounds of OLED (un-sweep-targer) monitor
       Rectangle monitorBoundsUnsweep = BFS.Monitor.GetMonitorBoundsByID(GetOledMonitorID());
 
+      // calculate source bounds: monitor or bounding box of all windows
+      Rectangle sourceBounds = CalculateSourceBounds(windowsToUnsweep);
+
       int unsweptWindowsCount = 0;
       // loop through each window to restore
       foreach (IntPtr windowHandle in windowsToUnsweep)
@@ -433,7 +416,7 @@ public static class DisplayFusionFunction
          if (debugPrintHideRevive) MessageBox.Show($"[TODO] unsweeping window {BFS.Window.GetText(new IntPtr(windowHandle))}");
 
          // todo how to unsweep correctly? for now just sweep from current to OLED monitor
-         SweepOneWindow(windowHandle, monitorBoundsUnsweep);
+         SweepOneWindow(windowHandle, sourceBounds, monitorBoundsUnsweep);
          unsweptWindowsCount += 1;
       }
 
@@ -532,13 +515,12 @@ public static class DisplayFusionFunction
       BFS.ScriptSettings.DeleteValue(MousePositionYSetting);
    }
 
-   public static void SweepOneWindow(IntPtr windowHandle,/* Rectangle boundsFrom,*/ Rectangle boundsTo)
+   public static void SweepOneWindow(IntPtr windowHandle, Rectangle boundsFrom, Rectangle boundsTo)
    {
-      Rectangle boundsFrom = BFS.Monitor.GetMonitorBoundsByWindow(windowHandle);
       if (debugPrintSweepMode) MessageBox.Show($"SweepOneWindow:\nboundsFrom: {boundsFrom},\nboundsTo {boundsTo}");
 
       // when window is already maximized restore it (so that it can be maximized on target screen)
-      // and treat it as if it's size would be the same as source monitor 
+      // and treat it as if its size would be the same as source monitor 
       // (because GetBounds() function gives you window bounds from before maximizing it)
       Rectangle windowBounds = new Rectangle() { };
       if (BFS.Window.IsMaximized(windowHandle))
@@ -681,8 +663,8 @@ public static class DisplayFusionFunction
             }
          }
 
-
-         if (debugPrintSweepModeCalcPos) MessageBox.Show($"\nboundsWindow\t{boundsWindow}\nboundsFrom\t{boundsFrom}\nboundsTo\t{boundsTo}\n\n" +
+         bool warning = newWindowBounds.Width < 10 || newWindowBounds.Height < 10;
+         if (debugPrintSweepModeCalcPos || warning) MessageBox.Show($"warning? {warning}\n\nboundsWindow\t{boundsWindow}\nboundsFrom\t{boundsFrom}\nboundsTo\t{boundsTo}\n\n" +
                          $"leftDistOld {leftDistOld}\nrightDistOld {rightDistOld}\ntopDistOld {topDistOld}\nbottomDistOld {bottomDistOld}\n\n" +
                          $"horizontalRatio {horizontalRatio}\nverticalRatio {verticalRatio}\n\n" +
                          $"horizontalSpace {horizontalSpace}\nverticalSpace {verticalSpace}\n\n" +
@@ -710,6 +692,33 @@ public static class DisplayFusionFunction
       return (shouldMaximize, newWindowBounds);
    }
 
+   public static Rectangle CalculateSourceBounds(IntPtr[] windowHandles)
+   {
+      if (windowHandles.Length == 0)
+      {
+         return new Rectangle { };
+      }
+      return BFS.Monitor.GetMonitorBoundsByWindow(windowHandles[0]);
+      // todo enableBoundingBoxMode
+   }
+
+   public static Rectangle CalculateBoundingBox(IntPtr[] windowHandles)
+   {
+      if (windowHandles.Length == 0)
+      {
+         return new Rectangle { };
+      }
+
+      if (!enableBoundingBoxMode)
+      {
+         MessageBox.Show($"ERROR <min>! CalculateBoundingBox when not enabled");
+         return new Rectangle { };
+      }
+
+      return BFS.Monitor.GetMonitorBoundsByWindow(windowHandles[0]);
+      // todo
+   }
+
    public static uint GetOledMonitorID()
    {
       // assume OLED monitor is the first 4K monitor in the system
@@ -723,7 +732,7 @@ public static class DisplayFusionFunction
          }
       }
 
-      MessageBox.Show($"ERROR! did not find monitor with 4K resolution");
+      MessageBox.Show($"ERROR <min>! did not find monitor with 4K resolution");
       return UInt32.MaxValue;
    }
 
@@ -740,36 +749,10 @@ public static class DisplayFusionFunction
          }
       }
 
-      MessageBox.Show($"ERROR! did not find monitor with 2K resolution");
+      MessageBox.Show($"ERROR <min>! did not find monitor with 2K resolution");
       return UInt32.MaxValue;
    }
 
-   public static int CountWindowsToHide()
-   {
-      IntPtr[] windowsToHide = GetFilteredVisibleWindows(GetOledMonitorID());
-
-      // save handle to currently active window
-      IntPtr activeWindowHandle = GetCachedActiveWindow();
-      int activeWindowOffset = 0;
-
-      if (debugPrintCountToMin) MessageBox.Show($"CountWindowsToHide: {windowsToHide.Length}");
-      foreach (IntPtr window in windowsToHide)
-      {
-         if (IsFocusModeRequested() && window == activeWindowHandle)
-         {
-            if (debugPrintCountToMin) MessageBox.Show($"Skipping counting focused window as window to hide: \n\n" +
-                                                      $"|{BFS.Window.GetText(window)}|\n\n|{BFS.Window.GetClass(window)}|");
-            activeWindowOffset = -1;
-         }
-         else
-         {
-            if (debugPrintCountToMin) MessageBox.Show($"To hide: \n\n|{BFS.Window.GetText(window)}|\n\n|{BFS.Window.GetClass(window)}|");
-
-         }
-      }
-
-      return windowsToHide.Length + activeWindowOffset;
-   }
 
    public static bool ShouldPrioritizeHiding()
    {
@@ -818,7 +801,7 @@ public static class DisplayFusionFunction
 
    public static void CacheActiveWindow()
    {
-      ActiveWindowCache = BFS.Window.GetFocusedWindow();
+      ActiveWindowHandleCache = BFS.Window.GetFocusedWindow();
    }
    public static bool IsForceReviveRequested()
    {
@@ -840,13 +823,12 @@ public static class DisplayFusionFunction
 
    public static IntPtr GetCachedActiveWindow()
    {
-      return ActiveWindowCache;
+      return ActiveWindowHandleCache;
    }
 
    public static IntPtr[] GetFilteredVisibleWindows(uint monitorId)
    {
-      IntPtr[] allWindows = BFS.Window.GetVisibleWindowHandlesByMonitor(monitorId);
-      IntPtr[] filteredWindows = allWindows.Where(windowHandle =>
+      return BFS.Window.GetVisibleWindowHandlesByMonitor(monitorId).Where(windowHandle =>
       {
          if (IsWindowBlacklisted(windowHandle))
          {
@@ -868,11 +850,30 @@ public static class DisplayFusionFunction
             // MessageBox.Show($"W NOT ignored minimized:\n\n|{BFS.Window.GetText(windowHandle)}|\n\n|{BFS.Window.GetClass(windowHandle)}|");
          }
 
+         if (!WindowUtils.IsWindowValid(windowHandle))
+         {
+            MessageBox.Show($"ignoring not valid window: {windowHandle}\n\n|{BFS.Window.GetText(windowHandle)}|\n\n|{BFS.Window.GetClass(windowHandle)}|");
+            return false; // todo comment out print
+         }
+
          // MessageBox.Show($"W NOT ignored at all:\n\n|{BFS.Window.GetText(windowHandle)}|\n\n|{BFS.Window.GetClass(windowHandle)}|");
          return true;
       }).ToArray();
+   }
 
-      return filteredWindows;
+   public static IntPtr[] GetWindowsToHide(uint monitorId)
+   {
+      return GetFilteredVisibleWindows(monitorId).Where(windowHandle =>
+      {
+         if (IsFocusModeRequested() && windowHandle == GetCachedActiveWindow())
+         {
+            // MessageBox.Show($"Ignored focused window as window to hide: \n\n" +
+            //                 $"|{BFS.Window.GetText(windowHandle)}|\n\n|{BFS.Window.GetClass(windowHandle)}|");
+            return false;
+         }
+
+         return true;
+      }).ToArray();
    }
 
    public static IntPtr[] GetFilteredMinimizedWindows(uint monitorId)
@@ -1057,7 +1058,7 @@ public static class DisplayFusionFunction
          {
             int errorCode = Marshal.GetLastWin32Error();
             string text = BFS.Window.GetText(windowHandle);
-            MessageBox.Show($"ERROR CompensateForShadow-GetWindowRectangle windows API: {errorCode}\n\n" +
+            MessageBox.Show($"ERROR <min> CompensateForShadow-GetWindowRectangle windows API: {errorCode}\n\n" +
                         $"windowHandle: |{windowHandle}|\n\n" +
                         $"text: |{text}|\n\n" +
                         $"requested pos: x.{x} y.{y} w.{w} h.{h}");
@@ -1067,7 +1068,7 @@ public static class DisplayFusionFunction
          {
             int errorCode = Marshal.GetLastWin32Error();
             string text = BFS.Window.GetText(windowHandle);
-            MessageBox.Show($"ERROR CompensateForShadow-GetWindowRect windows API: {errorCode}\n\n" +
+            MessageBox.Show($"ERROR <min> CompensateForShadow-GetWindowRect windows API: {errorCode}\n\n" +
                         $"windowHandle: |{windowHandle}|\n\n" +
                         $"text: |{text}|\n\n" +
                         $"requested pos: x.{x} y.{y} w.{w} h.{h}");
@@ -1092,6 +1093,12 @@ public static class DisplayFusionFunction
 
       public static Rectangle GetBounds(IntPtr windowHandle)
       {
+         if (!IsWindow(windowHandle))
+         {
+            MessageBox.Show($"ERROR <min> window not valid in GetBounds: {windowHandle}");
+            return new Rectangle { };
+         }
+
          int windowX = 0, windowY = 0, windowWidth = 0, windowHeight = 0;
          RECT windowRect;
 
@@ -1106,7 +1113,7 @@ public static class DisplayFusionFunction
          {
             int errorCode = Marshal.GetLastWin32Error();
             string text = BFS.Window.GetText(windowHandle);
-            MessageBox.Show($"ERROR GetBounds-GetWindowRect windows API: {errorCode}\n\ntext: |{text}|");
+            MessageBox.Show($"ERROR <min> GetBounds-GetWindowRect windows API: {errorCode}\n\ntext: |{text}|");
          }
 
          Rectangle rect = new Rectangle(
@@ -1120,6 +1127,12 @@ public static class DisplayFusionFunction
 
       public static Rectangle GetMonitorBoundsFromWindow(IntPtr windowHandle)
       {
+         if (!IsWindow(windowHandle))
+         {
+            MessageBox.Show($"ERROR <min> window not valid in GetMonitorBoundsFromWindow: {windowHandle}");
+            return new Rectangle { };
+         }
+
          IntPtr monitorHandle = MonitorFromWindow(windowHandle, MONITOR_DEFAULTTONEAREST);
 
          if (monitorHandle != IntPtr.Zero)
@@ -1130,7 +1143,7 @@ public static class DisplayFusionFunction
          }
          else
          {
-            MessageBox.Show("Error in GetMonitorBoundsFromWindow! Failed to determine the monitor.");
+            MessageBox.Show("ERROR <min> in GetMonitorBoundsFromWindow! Failed to determine the monitor.");
          }
          return default;
       }
@@ -1146,13 +1159,19 @@ public static class DisplayFusionFunction
          }
          else
          {
-            MessageBox.Show("ERROR in GetMonitorBounds! Failed to retrieve monitor information.");
+            MessageBox.Show("ERROR <min> in GetMonitorBounds! Failed to retrieve monitor information.");
          }
          return default;
       }
 
       public static void SetSizeAndLocation(IntPtr windowHandle, int x, int y, int w, int h)
       {
+         if (!IsWindow(windowHandle))
+         {
+            MessageBox.Show($"ERROR <min> window not valid in SetSizeAndLocation: {windowHandle}");
+            return;
+         }
+
          Rectangle newPos = CompensateForShadow(windowHandle, x, y, w, h);
 
          uint flags = SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOZORDER | SWP_FRAMECHANGED;
@@ -1167,7 +1186,7 @@ public static class DisplayFusionFunction
          {
             int errorCode = Marshal.GetLastWin32Error();
             string text = BFS.Window.GetText(windowHandle);
-            MessageBox.Show($"ERROR SetSizeAndLocation-SetWindowPos windows API: {errorCode}\n\n" +
+            MessageBox.Show($"ERROR <min> SetSizeAndLocation-SetWindowPos windows API: {errorCode}\n\n" +
                         $"text: |{text}|\n\n" +
                         $"requested pos: x.{x} y.{y} w.{w} h.{h}");
          }
@@ -1175,18 +1194,35 @@ public static class DisplayFusionFunction
 
       public static void MinimizeWindow(IntPtr windowHandle)
       {
+         if (!IsWindow(windowHandle))
+         {
+            MessageBox.Show($"ERROR <min> window not valid in MinimizeWindow: {windowHandle}");
+            return;
+         }
          // ShowWindow(windowHandle, SW_MINIMIZE); // activates next window than currently minimized, pushes some windows at the end of alt-tab
          ShowWindow(windowHandle, SW_SHOWMINIMIZED); // leaves windows on top of alt-tab
-         // ShowWindow(windowHandle, SW_SHOWMINNOACTIVE); // pushes windows to back of alt-tab
+                                                     // ShowWindow(windowHandle, SW_SHOWMINNOACTIVE); // pushes windows to back of alt-tab
       }
 
       public static void MaximizeWindow(IntPtr windowHandle)
       {
+         if (!IsWindow(windowHandle))
+         {
+            MessageBox.Show($"ERROR <min> window not valid in MaximizeWindow: {windowHandle}");
+            return;
+         }
+
          ShowWindow(windowHandle, SW_SHOWMAXIMIZED);
       }
 
       public static void RestoreWindow(IntPtr windowHandle)
       {
+         if (!IsWindow(windowHandle))
+         {
+            MessageBox.Show($"ERROR <min> window not valid in RestoreWindow: {windowHandle}");
+            return;
+         }
+
          ShowWindow(windowHandle, SW_RESTORE);
       }
 
@@ -1195,7 +1231,7 @@ public static class DisplayFusionFunction
          IntPtr hWndDesktop = GetShellWindow();
          if (hWndDesktop == IntPtr.Zero)
          {
-            MessageBox.Show($"ERROR Desktop window not found!");
+            MessageBox.Show($"ERROR <min> Desktop window not found!");
             return;
          }
          FocusOnWindow(hWndDesktop);
@@ -1203,6 +1239,12 @@ public static class DisplayFusionFunction
 
       public static void FocusOnWindow(IntPtr windowHandle)
       {
+         if (!IsWindow(windowHandle))
+         {
+            MessageBox.Show($"ERROR <min> window not valid in FocusOnWindow: {windowHandle}");
+            return;
+         }
+
          bool success = SetForegroundWindow(windowHandle);
          if (!success)
          {
@@ -1213,6 +1255,12 @@ public static class DisplayFusionFunction
 
       public static void PushToTop(IntPtr windowHandle)
       {
+         if (!IsWindow(windowHandle))
+         {
+            MessageBox.Show($"ERROR <min> window not valid in PushToTop: {windowHandle}");
+            return;
+         }
+
          if (debugPrintHideRevive) MessageBox.Show($"pushing\n|{BFS.Window.GetText(windowHandle)}|\non top");
          bool result = SetForegroundWindow(windowHandle);
          System.Threading.Thread.Sleep(30);
