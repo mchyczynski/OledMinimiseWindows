@@ -11,13 +11,13 @@ using System.Drawing;
 using System.Windows.Forms;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
-
+using System.Collections.Specialized;
 public static class DisplayFusionFunction
 {
    private const string ScriptStateMinSetting = "OledMinimizerScriptState";
    private const string ScriptStateSweepSetting = "OledMinimizerScriptStateSweep";
    private const string MinimizedWindowsListSetting = "OledMinimizerMinimizedWindowsList";
-   private const string SweptdWindowsListSetting = "OledMinimizerSweptWindowsList";
+   private const string SweptWindowsListSetting = "OledMinimizerSweptWindowsList";
    private const string MousePositionXSetting = "MousePositionXSetting";
    private const string MousePositionYSetting = "MousePositionYSetting";
    private const string RevivedState = "0";
@@ -71,6 +71,9 @@ public static class DisplayFusionFunction
 
    private static string listOfWindowsToUnsweepStr = ""; // debug only
    private static string listOfWindowsToHideStr = ""; // debug only
+
+   private static OrderedDictionary unsweepWindowsInfoMap = new();
+
 
    private static List<string> classnameBlacklist = new List<string> {"DFTaskbar", "DFTitleBarWindow", "Shell_TrayWnd",
                                                                        "tooltips", "Shell_InputSwitchTopLevelWindow",
@@ -222,11 +225,11 @@ public static class DisplayFusionFunction
       // sweep mode in reverse order (the same as restoring) compared to minimizing windows
       Array.Reverse(windowsToSweep);
 
-      // this will store the windows that we are sweepping so we can revive them later
-      string sweptWindowsSaveList = "";
-
       // calculate source bounds: monitor or bounding box of all windows
       Rectangle sourceBounds = CalculateSourceBounds(windowsToSweep);
+
+      // create info about swept windows with string builder to store in settings so we can unsweep them later
+      var saveInfoStrBuilder = new StringBuilder();
 
       // loop through all windows to be swept
       int sweptWindowsCount = 0;
@@ -236,8 +239,10 @@ public static class DisplayFusionFunction
          SweepOneWindow(windowHandle, sourceBounds, monitorBoundsSweep);
          sweptWindowsCount += 1;
 
-         // add the window to the list of swept windows
-         sweptWindowsSaveList += windowHandle.ToInt64().ToString() + "|";
+         // add info about the window to the list of swept windows
+         Rectangle bounds = WindowUtils.GetBounds(windowHandle);
+         bool isMaximized = BFS.Window.IsMaximized(windowHandle);
+         saveInfoStrBuilder.AppendLine($"{windowHandle},{bounds.X},{bounds.Y},{bounds.Width},{bounds.Height},{isMaximized}");
       }
 
       if (IsFocusModeRequested())
@@ -253,8 +258,8 @@ public static class DisplayFusionFunction
          // WindowUtils.FocusOnDekstop();
       }
 
-      // save the list of windows that were swept
-      BFS.ScriptSettings.WriteValue(SweptdWindowsListSetting, sweptWindowsSaveList);
+      // save the list of windows that were swept (with position info)
+      BFS.ScriptSettings.WriteValue(SweptWindowsListSetting, saveInfoStrBuilder.ToString());
 
       // set the script sweep state to HiddenState
       BFS.ScriptSettings.WriteValue(ScriptStateSweepSetting, HiddenState);
@@ -361,26 +366,43 @@ public static class DisplayFusionFunction
       }
       else // only unsweep windows previously swept
       {
-         List<IntPtr> windowsToUnsweep = new List<IntPtr>();
+         unsweepWindowsInfoMap.Clear();
 
-         // get the windows that we swept previously
-         string savedWindows = BFS.ScriptSettings.ReadValue(SweptdWindowsListSetting);
-         string[] windowsToReviveStrings = savedWindows.Split(new char[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
+         string savedWindows = BFS.ScriptSettings.ReadValue(SweptWindowsListSetting);
 
-         // parse window handles from string to int
-         // todo add saving and parsing original window position
-         foreach (string window in windowsToReviveStrings)
+         // parse windows info stored in settings as string: handle,x,y,w,h,isMaximized
+         var entries = savedWindows.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                           .Select(line =>
+                           {
+                              var parts = line.Split(',');
+                              if (parts.Count() < 6)
+                              {
+                                 MessageBox.Show($"ERROR <min> parts < 6\nline: {line}");
+                                 return (IntPtr.Zero, new Rectangle { }, false);
+                              }
+                              IntPtr windowHandle = (IntPtr)long.Parse(parts[0]);
+                              Rectangle boundsWindow = new Rectangle(
+                                 int.Parse(parts[1]), int.Parse(parts[2]),
+                                 int.Parse(parts[3]), int.Parse(parts[4])
+                             );
+                              bool isMaximized = bool.Parse(parts[5]);
+
+                              return (windowHandle, boundsWindow, isMaximized);
+                           });
+
+         // Store in the static map
+         foreach (var entry in entries)
          {
-            // try to turn the string into a long value if we can't convert it, go to the next setting
-            long windowHandleValue;
-            if (!Int64.TryParse(window, out windowHandleValue)) continue;
-
+            var (windowHandle, boundsWindow, isMaximized) = entry;
             // check if saved window handle is still valid (e.g. window wasn't closed in the meantime)
-            if (!WindowUtils.IsWindowValid(new IntPtr(windowHandleValue))) continue;
-
-            windowsToUnsweep.Add(new IntPtr(windowHandleValue));
+            if (!WindowUtils.IsWindowValid(windowHandle))
+            {
+               MessageBox.Show($"skipping invalid:\nwindowHandle {windowHandle}\nboundsWindow {boundsWindow}\nisMaximized {isMaximized}");
+               continue;
+            }
+            unsweepWindowsInfoMap[windowHandle] = (boundsWindow, isMaximized);
          }
-         listOfWindowsToUnsweep = windowsToUnsweep.ToArray();
+         listOfWindowsToUnsweep = unsweepWindowsInfoMap.Keys.Cast<IntPtr>().ToArray();
       }
 
       listOfWindowsToUnsweepStr = string.Join("\n",
@@ -440,7 +462,7 @@ public static class DisplayFusionFunction
       }
 
       // clear the windows that we saved
-      BFS.ScriptSettings.WriteValue(SweptdWindowsListSetting, string.Empty);
+      BFS.ScriptSettings.WriteValue(SweptWindowsListSetting, string.Empty);
 
       // set the script to RevivedState
       BFS.ScriptSettings.WriteValue(ScriptStateSweepSetting, RevivedState);
@@ -831,6 +853,7 @@ public static class DisplayFusionFunction
 
       listOfWindowsToUnsweepStr = "";
       listOfWindowsToHideStr = "";
+      unsweepWindowsInfoMap.Clear();
    }
 
    public static void CacheAll()
