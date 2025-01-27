@@ -209,6 +209,7 @@ public static class DisplayFusionFunction
       // save the list of windows that were minimized
       BFS.ScriptSettings.WriteValue(MinimizedWindowsListSetting, minimizedWindowsSaveList);
 
+      // todo remove ScriptStateMinSetting & ScriptStateSweepSetting and check if list is empty
       // set the script state to HiddenState
       BFS.ScriptSettings.WriteValue(ScriptStateMinSetting, HiddenState);
 
@@ -219,14 +220,21 @@ public static class DisplayFusionFunction
 
    public static int SweepWindows(IntPtr[] windowsToSweep)
    {
-      // get bounds of sweep-target monitor
-      Rectangle monitorBoundsSweep = BFS.Monitor.GetMonitorBoundsByID(GetSweepTargetMonitorID());
+      if (windowsToSweep.Length == 0)
+      {
+         MessageBox.Show($"ERROR <min>! SweepWindows no windows on sweep list");
+         return 0;
+      }
+
+      // get bounds of monitors
+      Rectangle monitorBoundsTarget = BFS.Monitor.GetMonitorBoundsByID(GetSweepTargetMonitorID());
+      Rectangle monitorBoundsSource = BFS.Monitor.GetMonitorBoundsByID(GetOledMonitorID());
 
       // sweep mode in reverse order (the same as restoring) compared to minimizing windows
       Array.Reverse(windowsToSweep);
 
-      // calculate source bounds: monitor or bounding box of all windows
-      Rectangle sourceBounds = CalculateSourceBounds(windowsToSweep);
+      // calculate bounding box of all windows
+      Rectangle boundingBox = CalculateBoundingBox(windowsToSweep);
 
       // create info about swept windows with string builder to store in settings so we can unsweep them later
       var saveInfoStrBuilder = new StringBuilder();
@@ -237,12 +245,14 @@ public static class DisplayFusionFunction
       {
          if (debugPrintHideRevive) MessageBox.Show($"sweeping window {BFS.Window.GetText(windowHandle)}");
 
-         // add info about the window to the list of swept windows
-         Rectangle bounds = WindowUtils.GetBounds(windowHandle);
-         bool isMaximized = BFS.Window.IsMaximized(windowHandle);
-         saveInfoStrBuilder.AppendLine($"{windowHandle},{bounds.X},{bounds.Y},{bounds.Width},{bounds.Height},{isMaximized}");
+         AppendSavedWindowInfo(saveInfoStrBuilder, windowHandle);
 
-         SweepOneWindow(windowHandle, sourceBounds, monitorBoundsSweep);
+         // // add info about the window to the list of swept windows
+         // Rectangle bounds = WindowUtils.GetBounds(windowHandle);
+         // bool isMaximized = BFS.Window.IsMaximized(windowHandle);
+         // saveInfoStrBuilder.AppendLine($"{windowHandle},{bounds.X},{bounds.Y},{bounds.Width},{bounds.Height},{isMaximized}");
+
+         SweepOneWindow(windowHandle, boundingBox, monitorBoundsSource, monitorBoundsTarget);
          sweptWindowsCount += 1;
       }
 
@@ -250,13 +260,6 @@ public static class DisplayFusionFunction
       {
          // restore focus from swept windows (which got focus because of pushing on top for Z-reordering)
          WindowUtils.FocusOnWindow(GetCachedActiveWindow());
-      }
-      // focus and move mouse only when not in focus mode and not sweeping
-      else /*if (!sweepMode)*/
-      {
-         // it is a fix in order to enable alt-tabbing back to top minimized window
-         // and being able to restore minimized windows from taskbar with only 1 mouse click
-         // WindowUtils.FocusOnDekstop();
       }
 
       // save the list of windows that were swept (with position info)
@@ -398,7 +401,12 @@ public static class DisplayFusionFunction
             // check if saved window handle is still valid (e.g. window wasn't closed in the meantime)
             if (!WindowUtils.IsWindowValid(windowHandle))
             {
-               MessageBox.Show($"skipping invalid:\nwindowHandle {windowHandle}\nboundsWindow {boundsWindow}\nisMaximized {isMaximized}");
+               if (debugWindowFiltering) MessageBox.Show($"skipping invalid:\nwindowHandle {windowHandle}\nboundsWindow {boundsWindow}\nisMaximized {isMaximized}");
+               continue;
+            }
+            if (BFS.Window.IsMinimized(windowHandle))
+            {
+               if (debugWindowFiltering) MessageBox.Show($"skipping saved but minimized :\nwindowHandle {windowHandle}\nboundsWindow {boundsWindow}\nisMaximized {isMaximized}");
                continue;
             }
             unsweepWindowsInfoMap[windowHandle] = (boundsWindow, isMaximized);
@@ -445,19 +453,21 @@ public static class DisplayFusionFunction
 
    public static int UnsweepWindows(IntPtr[] windowsToUnsweep)
    {
-      // get bounds of OLED (un-sweep-targer) monitor
-      Rectangle monitorBoundsUnsweep = BFS.Monitor.GetMonitorBoundsByID(GetOledMonitorID());
-
-      // calculate source bounds: monitor or bounding box of all windows
-      Rectangle sourceBounds = CalculateSourceBounds(windowsToUnsweep);
+      // Lazy version because those variables are common for all windows without saved position but it should not be calculated
+      // in case no window needs it (all have saved positions)
+      // get bounds of monitors, this time, because of "unsweeping", OLED is target and sweep-target-monitor is source 
+      Lazy<Rectangle> monitorBoundsTarget = new(() => BFS.Monitor.GetMonitorBoundsByID(GetOledMonitorID()));
+      Lazy<Rectangle> monitorBoundsSource = new(() => BFS.Monitor.GetMonitorBoundsByID(GetSweepTargetMonitorID()));
+      Lazy<Rectangle> boundingBox = new(() => CalculateBoundingBox(windowsToUnsweep));
 
       int unsweptWindowsCount = 0;
       // loop through each window to restore
       foreach (IntPtr windowHandle in windowsToUnsweep)
       {
-         if (debugPrintHideRevive) MessageBox.Show($"[TODO] unsweeping window {BFS.Window.GetText(new IntPtr(windowHandle))}");
+         if (debugPrintHideRevive) MessageBox.Show($"unsweeping window {BFS.Window.GetText(new IntPtr(windowHandle))}");
 
-         if (unsweepWindowsInfoMap.Contains(windowHandle))
+         // decide if position the window should be restored to saved value or swept in reverse direction
+         if (HasSavedWindowInfo(windowHandle))
          {
             var savedInfo = GetSavedWindowInfo(windowHandle);
 
@@ -467,13 +477,12 @@ public static class DisplayFusionFunction
 
             if (savedInfo.shouldMaximize)
             {
-               System.Threading.Thread.Sleep(20);
-               WindowUtils.MaximizeWindow(windowHandle);
+               WindowUtils.MaximizeWindow(windowHandle, 20);
             }
          }
-         else
+         else // sweeping in reverse direction because no saved window position stored
          {
-            SweepOneWindow(windowHandle, sourceBounds, monitorBoundsUnsweep);
+            SweepOneWindow(windowHandle, boundingBox.Value, monitorBoundsSource.Value, monitorBoundsTarget.Value);
          }
          unsweptWindowsCount += 1;
       }
@@ -575,40 +584,46 @@ public static class DisplayFusionFunction
       BFS.ScriptSettings.DeleteValue(MousePositionYSetting);
    }
 
-   public static void SweepOneWindow(IntPtr windowHandle, Rectangle boundsFrom, Rectangle boundsTo)
+   public static void SweepOneWindow(IntPtr windowHandle, Rectangle boundingBox, Rectangle boundsFrom, Rectangle boundsTo)
    {
-      if (debugPrintSweepMode) MessageBox.Show($"SweepOneWindow:\nboundsFrom: {boundsFrom},\nboundsTo {boundsTo}");
+      Rectangle windowBounds = WindowUtils.GetBounds(windowHandle);
 
-      if (DetectedInvalidWindow(windowHandle, "SweepOneWindow", $"boundsFrom: {boundsFrom},\nboundsTo {boundsTo}")) return;
+      string debugInfo = $"windowBounds: {windowBounds}\nboundingBox: {boundingBox}\nboundsFrom: {boundsFrom}\nboundsTo {boundsTo}";
+      if (debugPrintSweepMode) MessageBox.Show($"SweepOneWindow:\n" + debugInfo);
+
+      if (DetectedInvalidWindow(windowHandle, "SweepOneWindow", debugInfo)) return;
 
       // when window is already maximized restore it (so that it can be maximized on target screen)
-      // and treat it as if its size would be the same as source monitor 
+      // and treat it as if its size would be the same as source monitors size
       // (because GetBounds() function gives you window bounds from before maximizing it)
-      Rectangle windowBounds = new Rectangle() { };
       if (BFS.Window.IsMaximized(windowHandle))
       {
          BFS.Window.Restore(windowHandle);
          windowBounds = boundsFrom;
       }
-      else
-      {
-         windowBounds = WindowUtils.GetBounds(windowHandle);
-      }
 
       var result = CalculateSweptWindowPos(windowBounds, boundsFrom, boundsTo);
-      Rectangle newPos = result.newWindowBounds;
-      WindowUtils.SetSizeAndLocation(windowHandle, newPos);
+
+      WindowUtils.SetSizeAndLocation(windowHandle, result.newWindowBounds);
       WindowUtils.PushToTop(windowHandle);
 
       // maximize window when it is big enough
       if (result.shouldMaximize)
       {
-         System.Threading.Thread.Sleep(20);
-         WindowUtils.MaximizeWindow(windowHandle);
+         WindowUtils.MaximizeWindow(windowHandle, 20);
       }
    }
 
    public static (bool shouldMaximize, Rectangle newWindowBounds) CalculateSweptWindowPos(Rectangle boundsWindow, Rectangle boundsFrom, Rectangle boundsTo)
+   {
+      return CalculateSweptWindowPosDynamic(boundsWindow, boundsFrom, boundsTo); // todo
+   }
+
+   public static (bool shouldMaximize, Rectangle newWindowBounds) CalculateSweptWindowPosOneToOne(Rectangle boundsWindow, Rectangle boundsFrom, Rectangle boundsTo)
+   {
+      return CalculateSweptWindowPosDynamic(boundsWindow, boundsFrom, boundsTo); // todo
+   }
+   public static (bool shouldMaximize, Rectangle newWindowBounds) CalculateSweptWindowPosDynamic(Rectangle boundsWindow, Rectangle boundsFrom, Rectangle boundsTo)
    {
       bool doesntContain = !boundsFrom.Contains(boundsWindow);
       Rectangle newWindowBounds = new Rectangle();
@@ -762,26 +777,6 @@ public static class DisplayFusionFunction
       return (shouldMaximize, newWindowBounds);
    }
 
-   public static Rectangle CalculateSourceBounds(IntPtr[] windowHandles)
-   {
-      if (windowHandles.Length == 0)
-      {
-         return new Rectangle { };
-      }
-
-      if (enableBoundingBoxMode)
-      {
-         Rectangle boundingBox = CalculateBoundingBox(windowHandles);
-
-         if (boundingBox.Width < 1920 || boundingBox.Height < 1080)
-            return BFS.Monitor.GetMonitorBoundsByWindow(windowHandles[0]); // todo
-
-         return boundingBox;
-      }
-
-      return BFS.Monitor.GetMonitorBoundsByWindow(windowHandles[0]);
-   }
-
    public static Rectangle CalculateBoundingBox(IntPtr[] windowHandles)
    {
       if (windowHandles.Length == 0)
@@ -792,8 +787,8 @@ public static class DisplayFusionFunction
 
       if (!enableBoundingBoxMode)
       {
-         MessageBox.Show($"ERROR <min>! CalculateBoundingBox when not enabled");
-         return new Rectangle { };
+         // if bounding box mode is disabled return monitor bounds as bounding box always
+         return BFS.Monitor.GetMonitorBoundsByWindow(windowHandles[0]);
       }
 
       Rectangle boundingBox = WindowUtils.GetBounds(windowHandles[0]);
@@ -1076,7 +1071,7 @@ public static class DisplayFusionFunction
       return (bounds.Width / 2, bounds.Height / 2);
    }
 
-   public static bool DetectedInvalidWindow(IntPtr windowHandle, string windowName, string info)
+   public static bool DetectedInvalidWindow(IntPtr windowHandle, string windowName, string debugInfo)
    {
       if (!WindowUtils.IsWindowValid(windowHandle))
       {
@@ -1084,7 +1079,7 @@ public static class DisplayFusionFunction
                         $" detected invalid window handle:\n{windowHandle} |{BFS.Window.GetText(windowHandle)}|\n\n" +
                         $"listOfWindowsToUnsweep {listOfWindowsToUnsweepStr}\n" +
                         $"listOfWindowsToHide {listOfWindowsToHideStr}\n\n" +
-                        $"{info}");
+                        $"{debugInfo}");
          return true;
       }
       return false;
@@ -1105,6 +1100,18 @@ public static class DisplayFusionFunction
       MessageBox.Show("ERROR <min>! GetSavedWindowInfo: window handle {windowHandle} not found in the map");
 
       return (new Rectangle { }, false);
+   }
+
+   private static void AppendSavedWindowInfo(StringBuilder sb, IntPtr windowHandle)
+   {
+      Rectangle bounds = WindowUtils.GetBounds(windowHandle);
+      bool isMaximized = BFS.Window.IsMaximized(windowHandle);
+      sb.AppendLine($"{windowHandle},{bounds.X},{bounds.Y},{bounds.Width},{bounds.Height},{isMaximized}");
+   }
+
+   private static bool HasSavedWindowInfo(IntPtr windowHandle)
+   {
+      return unsweepWindowsInfoMap.Contains(windowHandle);
    }
 
    public static class WindowUtils
@@ -1380,13 +1387,15 @@ public static class DisplayFusionFunction
                                                      // ShowWindow(windowHandle, SW_SHOWMINNOACTIVE); // pushes windows to back of alt-tab
       }
 
-      public static void MaximizeWindow(IntPtr windowHandle)
+      public static void MaximizeWindow(IntPtr windowHandle, int delay = 0)
       {
          if (!IsWindow(windowHandle))
          {
             MessageBox.Show($"ERROR <min> window not valid in MaximizeWindow: {windowHandle}");
             return;
          }
+
+         if (delay > 0) System.Threading.Thread.Sleep(delay);
 
          ShowWindow(windowHandle, SW_SHOWMAXIMIZED);
       }
