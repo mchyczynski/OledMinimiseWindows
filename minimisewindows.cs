@@ -236,13 +236,14 @@ public static class DisplayFusionFunction
       foreach (IntPtr windowHandle in windowsToSweep)
       {
          if (debugPrintHideRevive) MessageBox.Show($"sweeping window {BFS.Window.GetText(windowHandle)}");
-         SweepOneWindow(windowHandle, sourceBounds, monitorBoundsSweep);
-         sweptWindowsCount += 1;
 
          // add info about the window to the list of swept windows
          Rectangle bounds = WindowUtils.GetBounds(windowHandle);
          bool isMaximized = BFS.Window.IsMaximized(windowHandle);
          saveInfoStrBuilder.AppendLine($"{windowHandle},{bounds.X},{bounds.Y},{bounds.Width},{bounds.Height},{isMaximized}");
+
+         SweepOneWindow(windowHandle, sourceBounds, monitorBoundsSweep);
+         sweptWindowsCount += 1;
       }
 
       if (IsFocusModeRequested())
@@ -457,7 +458,33 @@ public static class DisplayFusionFunction
          if (debugPrintHideRevive) MessageBox.Show($"[TODO] unsweeping window {BFS.Window.GetText(new IntPtr(windowHandle))}");
 
          // todo how to unsweep correctly? for now just sweep from current to OLED monitor
-         SweepOneWindow(windowHandle, sourceBounds, monitorBoundsUnsweep);
+         if (unsweepWindowsInfoMap.Contains(windowHandle))
+         {
+            // MessageBox.Show($"unsweepWindowsInfoMap.Contains");
+            if (BFS.Window.IsMaximized(windowHandle))
+            {
+               // MessageBox.Show($"unsweepWindowsInfoMap restoring maxed window");
+               BFS.Window.Restore(windowHandle);
+            }
+            // MessageBox.Show($"unsweepWindowsInfoMap before map get");
+            (Rectangle savedPos, bool shouldMaximize) = ((Rectangle, bool))unsweepWindowsInfoMap[windowHandle]!;
+
+            // MessageBox.Show($"unsweepWindowsInfoMap before set size to {savedPos}");
+            WindowUtils.SetSizeAndLocation(windowHandle, savedPos);
+
+            if (shouldMaximize)
+            {
+               // MessageBox.Show($"unsweepWindowsInfoMap before maximizing");
+               System.Threading.Thread.Sleep(20);
+               WindowUtils.MaximizeWindow(windowHandle);
+            }
+            // else MessageBox.Show($"unsweepWindowsInfoMap NOT maximizing");
+         }
+         else
+         {
+            // MessageBox.Show($"unsweepWindowsInfoMap DOES NOT contain");
+            SweepOneWindow(windowHandle, sourceBounds, monitorBoundsUnsweep);
+         }
          unsweptWindowsCount += 1;
       }
 
@@ -580,7 +607,7 @@ public static class DisplayFusionFunction
 
       var result = CalculateSweptWindowPos(windowBounds, boundsFrom, boundsTo);
       Rectangle newPos = result.newWindowBounds;
-      WindowUtils.SetSizeAndLocation(windowHandle, newPos.X, newPos.Y, newPos.Width, newPos.Height);
+      WindowUtils.SetSizeAndLocation(windowHandle, newPos);
       WindowUtils.PushToTop(windowHandle);
 
       // maximize window when it is big enough
@@ -1282,6 +1309,11 @@ public static class DisplayFusionFunction
             MessageBox.Show("ERROR <min> in GetMonitorBounds! Failed to retrieve monitor information.");
          }
          return default;
+      }
+
+      public static void SetSizeAndLocation(IntPtr windowHandle, Rectangle bounds)
+      {
+         SetSizeAndLocation(windowHandle, bounds.X, bounds.Y, bounds.Width, bounds.Height);
       }
       public static void SetSizeAndLocation(IntPtr windowHandle, int x, int y, int w, int h)
       {
