@@ -14,15 +14,10 @@ using System.Runtime.InteropServices;
 using System.Collections.Specialized;
 public static class DisplayFusionFunction
 {
-   private const string ScriptStateMinSetting = "OledMinimizerScriptState";
-   private const string ScriptStateSweepSetting = "OledMinimizerScriptStateSweep";
    private const string MinimizedWindowsListSetting = "OledMinimizerMinimizedWindowsList";
    private const string SweptWindowsListSetting = "OledMinimizerSweptWindowsList";
    private const string MousePositionXSetting = "MousePositionXSetting";
    private const string MousePositionYSetting = "MousePositionYSetting";
-   private const string RevivedState = "0";
-   private const string HiddenState = "1";
-
    private static bool ForceReviveRequestedCache = false;
    private static bool FocusModeRequestedCache = false;
    private static bool SweepModeRequestedCache = false;
@@ -83,6 +78,7 @@ public static class DisplayFusionFunction
    private static List<string> textBlacklist = new List<string> {"Program Manager", "Volume Mixer", "Snap Assist", "Greenshot capture form",
                                                                   "Battery Information", "Date and Time Information", "Network Connections",
                                                                   "Volume Control", "Start", "Search"};
+   private static StringBuilder saveInfoStrBuilder = new();
 
    public static void Run(IntPtr windowHandle)
    {
@@ -151,14 +147,14 @@ public static class DisplayFusionFunction
 
    private static bool WereWindowsMinimized()
    {
-      string setting = BFS.ScriptSettings.ReadValue(ScriptStateMinSetting);
-      return !string.IsNullOrEmpty(setting) && (setting.Equals(HiddenState, StringComparison.Ordinal));
+      string setting = BFS.ScriptSettings.ReadValue(MinimizedWindowsListSetting);
+      return !string.IsNullOrEmpty(setting);
    }
 
    private static bool WereWindowsSwept()
    {
-      string setting = BFS.ScriptSettings.ReadValue(ScriptStateSweepSetting);
-      return !string.IsNullOrEmpty(setting) && (setting.Equals(HiddenState, StringComparison.Ordinal));
+      string setting = BFS.ScriptSettings.ReadValue(SweptWindowsListSetting);
+      return !string.IsNullOrEmpty(setting);
    }
 
    public static void HandleHiding(IntPtr[] windowsToHide)
@@ -209,10 +205,6 @@ public static class DisplayFusionFunction
       // save the list of windows that were minimized
       BFS.ScriptSettings.WriteValue(MinimizedWindowsListSetting, minimizedWindowsSaveList);
 
-      // todo remove ScriptStateMinSetting & ScriptStateSweepSetting and check if list is empty
-      // set the script state to HiddenState
-      BFS.ScriptSettings.WriteValue(ScriptStateMinSetting, HiddenState);
-
       if (debugPrintStartStop) MessageBox.Show($"finished MIN (minimized {minimizedWindowsCount}/{windowsToMinimize.Length} windows)");
 
       return minimizedWindowsCount;
@@ -236,21 +228,14 @@ public static class DisplayFusionFunction
       // calculate bounding box of all windows
       Rectangle boundingBox = CalculateBoundingBox(windowsToSweep);
 
-      // create info about swept windows with string builder to store in settings so we can unsweep them later
-      var saveInfoStrBuilder = new StringBuilder();
-
       // loop through all windows to be swept
       int sweptWindowsCount = 0;
       foreach (IntPtr windowHandle in windowsToSweep)
       {
          if (debugPrintHideRevive) MessageBox.Show($"sweeping window {BFS.Window.GetText(windowHandle)}");
 
-         AppendSavedWindowInfo(saveInfoStrBuilder, windowHandle);
-
-         // // add info about the window to the list of swept windows
-         // Rectangle bounds = WindowUtils.GetBounds(windowHandle);
-         // bool isMaximized = BFS.Window.IsMaximized(windowHandle);
-         // saveInfoStrBuilder.AppendLine($"{windowHandle},{bounds.X},{bounds.Y},{bounds.Width},{bounds.Height},{isMaximized}");
+         // save info about swept window to store in settings so we can unsweep them later
+         AppendSavedWindowInfo(windowHandle);
 
          SweepOneWindow(windowHandle, boundingBox, monitorBoundsSource, monitorBoundsTarget);
          sweptWindowsCount += 1;
@@ -263,10 +248,7 @@ public static class DisplayFusionFunction
       }
 
       // save the list of windows that were swept (with position info)
-      BFS.ScriptSettings.WriteValue(SweptWindowsListSetting, saveInfoStrBuilder.ToString());
-
-      // set the script sweep state to HiddenState
-      BFS.ScriptSettings.WriteValue(ScriptStateSweepSetting, HiddenState);
+      BFS.ScriptSettings.WriteValue(SweptWindowsListSetting, GetSavedWindowInfoStr());
 
       if (debugPrintStartStop) MessageBox.Show($"finished SWEEP (swept {sweptWindowsCount}/{windowsToSweep.Length} windows)");
 
@@ -445,10 +427,7 @@ public static class DisplayFusionFunction
       // clear the windows that we saved
       BFS.ScriptSettings.WriteValue(MinimizedWindowsListSetting, string.Empty);
 
-      // set the script to RevivedState
-      BFS.ScriptSettings.WriteValue(ScriptStateMinSetting, RevivedState);
       return restoredWindowsCount;
-
    }
 
    public static int UnsweepWindows(IntPtr[] windowsToUnsweep)
@@ -490,8 +469,6 @@ public static class DisplayFusionFunction
       // clear the windows that we saved
       BFS.ScriptSettings.WriteValue(SweptWindowsListSetting, string.Empty);
 
-      // set the script to RevivedState
-      BFS.ScriptSettings.WriteValue(ScriptStateSweepSetting, RevivedState);
       return unsweptWindowsCount;
    }
 
@@ -866,6 +843,7 @@ public static class DisplayFusionFunction
       listOfWindowsToUnsweepStr = "";
       listOfWindowsToHideStr = "";
       unsweepWindowsInfoMap.Clear();
+      saveInfoStrBuilder.Clear();
    }
 
    public static void CacheAll()
@@ -1090,6 +1068,20 @@ public static class DisplayFusionFunction
       return val < 0 ? 0 : val;
    }
 
+   private static void AppendSavedWindowInfo(IntPtr windowHandle)
+   {
+      Rectangle bounds = WindowUtils.GetBounds(windowHandle);
+      bool isMaximized = BFS.Window.IsMaximized(windowHandle);
+      saveInfoStrBuilder.AppendLine($"{windowHandle},{bounds.X},{bounds.Y},{bounds.Width},{bounds.Height},{isMaximized}");
+   }
+
+   public static string GetSavedWindowInfoStr()
+   {
+      string str = saveInfoStrBuilder.ToString();
+      saveInfoStrBuilder.Clear();
+      return str;
+   }
+
    public static (Rectangle savedPosition, bool shouldMaximize) GetSavedWindowInfo(IntPtr windowHandle)
    {
       if (unsweepWindowsInfoMap.Contains(windowHandle))
@@ -1102,12 +1094,6 @@ public static class DisplayFusionFunction
       return (new Rectangle { }, false);
    }
 
-   private static void AppendSavedWindowInfo(StringBuilder sb, IntPtr windowHandle)
-   {
-      Rectangle bounds = WindowUtils.GetBounds(windowHandle);
-      bool isMaximized = BFS.Window.IsMaximized(windowHandle);
-      sb.AppendLine($"{windowHandle},{bounds.X},{bounds.Y},{bounds.Width},{bounds.Height},{isMaximized}");
-   }
 
    private static bool HasSavedWindowInfo(IntPtr windowHandle)
    {
