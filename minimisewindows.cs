@@ -457,32 +457,22 @@ public static class DisplayFusionFunction
       {
          if (debugPrintHideRevive) MessageBox.Show($"[TODO] unsweeping window {BFS.Window.GetText(new IntPtr(windowHandle))}");
 
-         // todo how to unsweep correctly? for now just sweep from current to OLED monitor
          if (unsweepWindowsInfoMap.Contains(windowHandle))
          {
-            // MessageBox.Show($"unsweepWindowsInfoMap.Contains");
-            if (BFS.Window.IsMaximized(windowHandle))
-            {
-               // MessageBox.Show($"unsweepWindowsInfoMap restoring maxed window");
-               BFS.Window.Restore(windowHandle);
-            }
-            // MessageBox.Show($"unsweepWindowsInfoMap before map get");
-            (Rectangle savedPos, bool shouldMaximize) = ((Rectangle, bool))unsweepWindowsInfoMap[windowHandle]!;
+            var savedInfo = GetSavedWindowInfo(windowHandle);
 
-            // MessageBox.Show($"unsweepWindowsInfoMap before set size to {savedPos}");
-            WindowUtils.SetSizeAndLocation(windowHandle, savedPos);
+            if (BFS.Window.IsMaximized(windowHandle)) BFS.Window.Restore(windowHandle);
 
-            if (shouldMaximize)
+            WindowUtils.SetSizeAndLocation(windowHandle, savedInfo.savedPosition);
+
+            if (savedInfo.shouldMaximize)
             {
-               // MessageBox.Show($"unsweepWindowsInfoMap before maximizing");
                System.Threading.Thread.Sleep(20);
                WindowUtils.MaximizeWindow(windowHandle);
             }
-            // else MessageBox.Show($"unsweepWindowsInfoMap NOT maximizing");
          }
          else
          {
-            // MessageBox.Show($"unsweepWindowsInfoMap DOES NOT contain");
             SweepOneWindow(windowHandle, sourceBounds, monitorBoundsUnsweep);
          }
          unsweptWindowsCount += 1;
@@ -1105,6 +1095,17 @@ public static class DisplayFusionFunction
       return val < 0 ? 0 : val;
    }
 
+   public static (Rectangle savedPosition, bool shouldMaximize) GetSavedWindowInfo(IntPtr windowHandle)
+   {
+      if (unsweepWindowsInfoMap.Contains(windowHandle))
+      {
+         return ((Rectangle, bool))unsweepWindowsInfoMap[windowHandle]!;
+      }
+
+      MessageBox.Show("ERROR <min>! GetSavedWindowInfo: window handle {windowHandle} not found in the map");
+
+      return (new Rectangle { }, false);
+   }
 
    public static class WindowUtils
    {
