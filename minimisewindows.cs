@@ -58,6 +58,7 @@ public static class DisplayFusionFunction
    private const bool debugPrintSweepMode = enableDebugPrints && false;
    private const bool debugPrintSweepModeCalcPos = enableDebugPrints && false;
    private const bool debugPrintListOfWindows = enableDebugPrints && false;
+   private const bool debugPrintCalculateSnapPointLen = enableDebugPrints && false;
 
    private static string listOfWindowsToUnsweepStr = ""; // debug only
    private static string listOfWindowsToHideStr = ""; // debug only
@@ -666,33 +667,16 @@ public static class DisplayFusionFunction
          }
          else // freeSpace.horizontal <= 0
          {
-            // there is no space left, max out window horizontally
+            // there is no space left horizontally, max out window left-right
             newBoundsWindow.X = boundsTo.X;
-            // override window witdth, it needs to be smaller
             newBoundsWindow.Width = boundsTo.Width;
 
             // optionally snap top or bottom if window was resized horizontally
-            if (enableSweepModeSnap)
-            {
-               int topDistNew = newBoundsWindow.Y - boundsTo.Y;
-               int bottomDistNew = (boundsTo.Y + boundsTo.Height - TASKBAR_HEIGHT) - (newBoundsWindow.Y + newBoundsWindow.Height);
 
-               if (topDistNew < SWEEP_SNAP_THRESHOLD)
-               {
-                  if (debugPrintSweepModeCalcPos) MessageBox.Show($"Snap top");
-                  newBoundsWindow.Y = 0; // snap window to top, no size change
-               }
-
-               if (bottomDistNew < SWEEP_SNAP_THRESHOLD)
-               {
-                  if (debugPrintSweepModeCalcPos) MessageBox.Show($"Snap bottom");
-                  newBoundsWindow.Y = boundsTo.Height - TASKBAR_HEIGHT - newBoundsWindow.Height; // snap window to bottom, no size change
-               }
-
-               if (debugPrintSweepModeCalcPos) MessageBox.Show($"topDistNew {topDistNew}\nbottomDistNew {bottomDistNew}\n\n" +
-                                                $"newBoundsWindow.Y {newBoundsWindow.Y}");
-            }
-
+            var snapped = CalculateSnapPointLen(newBoundsWindow.Y, newBoundsWindow.Height,
+                                                boundsTo.Y, boundsTo.Height - TASKBAR_HEIGHT, false);
+            newBoundsWindow.Y = snapped.point;
+            newBoundsWindow.Height = snapped.len;
          }
 
          if (freeSpace.vertical > 0)
@@ -702,49 +686,20 @@ public static class DisplayFusionFunction
          }
          else // freeSpace.vertical <= 0
          {
-            // there is no space left, max out window vertically
+            // there is no space left vertically, max out window top-bottom
             newBoundsWindow.Y = boundsTo.Y;
-            // override window height, it needs to be smaller
             newBoundsWindow.Height = boundsTo.Height - TASKBAR_HEIGHT;
 
+            bool widthEligibleForHalfSplit = boundsWindow.Width < (boundsFrom.Width / 2 + SWEEP_SNAP_HALFSPLIT_THRESHOLD) &&
+                                 boundsWindow.Width > (boundsFrom.Width / 2 - SWEEP_SNAP_HALFSPLIT_THRESHOLD);
+
             // optionally snap left or right if window was resized vertically
-            if (enableSweepModeSnap)
-            {
-               int leftDistNew = newBoundsWindow.X - boundsTo.X;
-               int rightDistNew = (boundsTo.X + boundsTo.Width) - (newBoundsWindow.X + newBoundsWindow.Width);
+            var snapped = CalculateSnapPointLen(newBoundsWindow.X, newBoundsWindow.Width,
+                                                boundsTo.X, boundsTo.Width,
+                                                widthEligibleForHalfSplit);
+            newBoundsWindow.X = snapped.point;
+            newBoundsWindow.Width = snapped.len;
 
-               // check if old window width was near to half split of the source monitor
-               bool widthEligibleForHalfSplit = boundsWindow.Width < (boundsFrom.Width / 2 + SWEEP_SNAP_HALFSPLIT_THRESHOLD) &&
-                                                boundsWindow.Width > (boundsFrom.Width / 2 - SWEEP_SNAP_HALFSPLIT_THRESHOLD);
-
-               if (leftDistNew < SWEEP_SNAP_THRESHOLD)
-               {
-                  if (debugPrintSweepModeCalcPos) MessageBox.Show($"Snap left");
-                  newBoundsWindow.X = 0; // snap window to left, no size change
-
-                  if (enableSweepModeSnapHalfSplit && widthEligibleForHalfSplit)
-                  {
-                     if (debugPrintSweepModeCalcPos) MessageBox.Show($"Snap to vertical half split on right");
-                     newBoundsWindow.Width = boundsTo.Width / 2;
-                  }
-               }
-
-               if (rightDistNew < SWEEP_SNAP_THRESHOLD)
-               {
-                  if (debugPrintSweepModeCalcPos) MessageBox.Show($"Snap right");
-
-                  if (enableSweepModeSnapHalfSplit && widthEligibleForHalfSplit)
-                  {
-                     if (debugPrintSweepModeCalcPos) MessageBox.Show($"Snap to vertical half split on left");
-                     newBoundsWindow.Width = boundsTo.Width / 2;
-                  }
-
-                  newBoundsWindow.X = boundsTo.Width - newBoundsWindow.Width; // snap window to right after optional size change
-               }
-
-               if (debugPrintSweepModeCalcPos) MessageBox.Show($"leftDistNew {leftDistNew}\nrightDistNew {rightDistNew}\n\n" +
-                                                               $"newBoundsWindow.X {newBoundsWindow.X}");
-            }
          }
 
          bool sizeWarning = newBoundsWindow.Width < 20 || newBoundsWindow.Width > 3840 ||
@@ -765,7 +720,6 @@ public static class DisplayFusionFunction
                          $"newBoundsWindow.Width {newBoundsWindow.Width}\nnewBoundsWindow.Height {newBoundsWindow.Height}");
       }
 
-
       return (shouldMaximize, newBoundsWindow);
    }
 
@@ -780,6 +734,59 @@ public static class DisplayFusionFunction
          noResizeMaxWidth,
          noResizeMaxHeight
       );
+   }
+
+   public static (int point, int len) CalculateSnapPointLen(int windowPoint, int windowLen, int monitorPoint, int monitorLen, bool doHalfSplit)
+   {
+      // optionally snap left or right if window was resized vertically
+      int newWindowPoint = windowPoint;
+      int newWindowLen = windowLen;
+
+      if (enableSweepModeSnap)
+      {
+         int leftTopDistNew = windowPoint - monitorPoint;
+         int rightBottomDistNew = (monitorPoint + monitorLen) - (windowPoint + windowLen);
+
+         string debugInfo = $"windowPoint: {windowPoint}\twindowLen: {windowLen}\n" +
+                            $"monitorPoint: {monitorPoint}\tmonitorLen: {monitorLen}\n" +
+                            $"doHalfSplit: {doHalfSplit}\n\n" +
+                            $"leftTopDistNew: {leftTopDistNew}\n" +
+                            $"rightBottomDistNew: {rightBottomDistNew}\n";
+         if (leftTopDistNew < 0) MessageBox.Show($"ERR <min> CalculateSnapPointLen: leftTopDistNew < 0\n\n" + debugInfo);
+         if (rightBottomDistNew < 0) MessageBox.Show($"ERR <min> CalculateSnapPointLen: rightBottomDistNew < 0\n\n" + debugInfo);
+
+         if (leftTopDistNew < SWEEP_SNAP_THRESHOLD)
+         {
+            if (debugPrintCalculateSnapPointLen) MessageBox.Show($"CalculateSnapPointLen\nSnap left/top");
+            newWindowPoint = 0; // snap window to left/top, no size change
+
+            if (enableSweepModeSnapHalfSplit && doHalfSplit)
+            {
+               if (debugPrintCalculateSnapPointLen) MessageBox.Show($"CalculateSnapPointLen\nSnap to half split on right/bottom");
+               newWindowLen = monitorLen / 2;
+            }
+         }
+
+         if (rightBottomDistNew < SWEEP_SNAP_THRESHOLD)
+         {
+            if (debugPrintCalculateSnapPointLen) MessageBox.Show($"CalculateSnapPointLen\nSnap right/bottom");
+
+            if (enableSweepModeSnapHalfSplit && doHalfSplit)
+            {
+               if (debugPrintCalculateSnapPointLen) MessageBox.Show($"CalculateSnapPointLen\nSnap to vertical half split on left/top");
+               newWindowLen = monitorLen / 2;
+            }
+
+            newWindowPoint = monitorLen - newWindowLen; // snap window to right/bottom after optional size change
+         }
+
+         if (debugPrintCalculateSnapPointLen) MessageBox.Show($"CalculateSnapPointLen\n\n" +
+                                                               $"newWindowPoint {newWindowPoint}\n" +
+                                                               $"newWindowLen {newWindowLen}\n\n" +
+                                                               debugInfo);
+      }
+
+      return (newWindowPoint, newWindowLen);
    }
 
    public static int GetNoResizeMaxWidth(Rectangle boundsTo)
