@@ -575,13 +575,10 @@ public static class DisplayFusionFunction
 
       if (DetectedInvalidWindow(windowHandle, "SweepOneWindow", debugInfo)) return;
 
-      // when window is already maximized restore it (so that it can be maximized on target screen)
-      // and treat it as if its size would be the same as source monitors size
-      // (because GetBounds() function gives you window bounds from before maximizing it)
+      // when window is already maximized restore it before sweeping (so that it can be maximized on target screen)
       if (BFS.Window.IsMaximized(windowHandle))
       {
          BFS.Window.Restore(windowHandle);
-         boundsWindow = boundsFrom;
       }
 
       var result = CalculateSweptWindowPos(boundsWindow, boundingBox, boundsFrom, boundsTo);
@@ -602,7 +599,7 @@ public static class DisplayFusionFunction
                                                                            Rectangle boundsFrom,
                                                                            Rectangle boundsTo)
    {
-      if (boundingBox.Width <= RESOLUTION_2K_WIDTH && boundingBox.Height <= RESOLUTION_2K_HEIGHT) // or SWEEP_NO_RESIZE_THRESHOLD??
+      if (boundingBox.Width <= RESOLUTION_2K_WIDTH && boundingBox.Height <= RESOLUTION_2K_HEIGHT)
       {
          return CalculateSweptWindowPosOneToOne(boundsWindow, boundingBox, boundsFrom, boundsTo);
 
@@ -1163,8 +1160,11 @@ public static class DisplayFusionFunction
 
    private static void AppendSavedWindowInfo(IntPtr windowHandle)
    {
-      Rectangle bounds = WindowUtils.GetBounds(windowHandle);
       bool isMaximized = BFS.Window.IsMaximized(windowHandle);
+      Rectangle bounds = isMaximized ?
+                     WindowUtils.GetRestoredBounds(windowHandle) :
+                     WindowUtils.GetBounds(windowHandle);
+
       saveInfoStrBuilder.AppendLine($"{windowHandle},{bounds.X},{bounds.Y},{bounds.Width},{bounds.Height},{isMaximized}");
    }
 
@@ -1224,7 +1224,15 @@ public static class DisplayFusionFunction
       [DllImport("user32.dll", SetLastError = true)]
       [return: MarshalAs(UnmanagedType.Bool)]
       public static extern bool IsWindow(IntPtr hWnd);
+      [DllImport("user32.dll", SetLastError = true)]
+      public static extern bool GetWindowPlacement(IntPtr hWnd, ref WINDOWPLACEMENT lpwndpl);
 
+      [StructLayout(LayoutKind.Sequential)]
+      public struct POINT
+      {
+         public int X;
+         public int Y;
+      }
 
       [Serializable, StructLayout(LayoutKind.Sequential)]
       public struct RECT
@@ -1251,6 +1259,17 @@ public static class DisplayFusionFunction
          public RECT rcMonitor; // The monitor bounds
          public RECT rcWork;    // The work area
          public uint dwFlags;   // Monitor flags
+      }
+
+      [StructLayout(LayoutKind.Sequential)]
+      public struct WINDOWPLACEMENT
+      {
+         public int length;
+         public int flags;
+         public int showCmd;
+         public POINT minPosition;
+         public POINT maxPosition;
+         public RECT normalPosition;
       }
 
       private const int SW_SHOWNORMAL = 1;
@@ -1359,6 +1378,32 @@ public static class DisplayFusionFunction
          return rect;
       }
 
+      public static Rectangle GetRestoredBounds(IntPtr windowHandle)
+      {
+         if (!IsWindow(windowHandle))
+         {
+            MessageBox.Show($"ERROR <min> window not valid in GetRestoredBounds: {windowHandle}");
+            return new Rectangle { };
+         }
+
+         WINDOWPLACEMENT placement = new WINDOWPLACEMENT();
+         placement.length = Marshal.SizeOf(typeof(WINDOWPLACEMENT));
+
+         if (GetWindowPlacement(windowHandle, ref placement))
+         {
+            // The normalPosition field contains the restore bounds.
+            RECT r = placement.normalPosition;
+            return new Rectangle(r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top);
+         }
+         else
+         {
+            int errorCode = Marshal.GetLastWin32Error();
+            string text = BFS.Window.GetText(windowHandle);
+            MessageBox.Show($"ERROR <min> GetRestoredBoundss-GetWindowPlacement windows API: {errorCode}\n\ntext: |{text}|");
+         }
+         return new Rectangle { };
+      }
+
       public static Rectangle GetMonitorBoundsFromWindow(IntPtr windowHandle)
       {
          if (!IsWindow(windowHandle))
@@ -1421,7 +1466,7 @@ public static class DisplayFusionFunction
                           $"text: |{text}|\n\n" +
                           $"current pos: {currentPos}\n" +
                           $"requested pos: {requestedPos}\n" +
-                          $"new pos: {newPos} (shad-comp)\n" +
+                          $"shad-comp pos: {newPos}\n" +
                           $"checked pos: {checkedPos}\n\n";
 
          uint flags = SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOZORDER | SWP_FRAMECHANGED;
