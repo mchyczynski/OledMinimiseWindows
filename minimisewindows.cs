@@ -18,54 +18,54 @@ public static class DisplayFusionFunction
    private const string SweptWindowsListSetting = "OledMinimizerSweptWindowsList";
    private const string MousePositionXSetting = "MousePositionXSetting";
    private const string MousePositionYSetting = "MousePositionYSetting";
+   private const uint RESOLUTION_4K_WIDTH = 3840;
+   private const uint RESOLUTION_4K_HEIGHT = 2160;
+
+   private const uint RESOLUTION_2K_WIDTH = 2560;
+   private const uint RESOLUTION_2K_HEIGHT = 1440;
+   private const uint MOUSE_RESTORE_THRESHOLD = 200;
+   private const int SWEEP_SNAP_THRESHOLD = 150;
+   private const int SWEEP_SNAP_HALFSPLIT_THRESHOLD = 500;
+   private const double SWEEP_NO_RESIZE_THRESHOLD = 0.9;
+   private const int TASKBAR_HEIGHT = 40;
+
+   public const string KEY_SHIFT = "16";
+   public const string KEY_CTRL = "17";
+   public const string KEY_ALT = "18";
+
+   private const bool enableMouseMove = true;
+   private const bool enableDebugPrints = true;
+   private const bool prioritizeHidingDefault = true;
+   private const bool keepRestoringDefault = true;
+   private const bool enableForceRevive = true;
+   private const bool enableFocusMode = true;
+   private const bool enableSweepMode = true;
+   private const bool enableSweepModeSnap = true;
+   private const bool enableSweepModeSnapHalfSplit = true;
+   private const bool enableBoundingBoxMode = true;
+   private const bool debugPrintHideRevive = enableDebugPrints && false;
+   private const bool debugPrintStartStop = enableDebugPrints && false;
+   private const bool debugPrintFindMonitorId = enableDebugPrints && false;
+   private const bool debugPrintNoMonitorFound = enableDebugPrints && true;
+   private const bool debugWindowFiltering = enableDebugPrints && false;
+   private const bool debugPrintMoveCursor = enableDebugPrints && false;
+   private const bool debugPrintDecideMinRevive = enableDebugPrints && false;
+   private const bool debugPrintCountToMin = enableDebugPrints && false;
+   private const bool debugPrintForceReviveKey = enableDebugPrints && false;
+   private const bool debugPrintFocusModeKey = enableDebugPrints && false;
+   private const bool debugPrintFocusMode = enableDebugPrints && false;
+   private const bool debugPrintSweepModeKey = enableDebugPrints && false;
+   private const bool debugPrintSweepMode = enableDebugPrints && false;
+   private const bool debugPrintSweepModeCalcPos = enableDebugPrints && false;
+   private const bool debugPrintListOfWindows = enableDebugPrints && false;
+
+   private static string listOfWindowsToUnsweepStr = ""; // debug only
+   private static string listOfWindowsToHideStr = ""; // debug only
+
    private static bool ForceReviveRequestedCache = false;
    private static bool FocusModeRequestedCache = false;
    private static bool SweepModeRequestedCache = false;
    private static IntPtr ActiveWindowHandleCache = IntPtr.Zero;
-
-   private static readonly uint RESOLUTION_4K_WIDTH = 3840;
-   private static readonly uint RESOLUTION_4K_HEIGHT = 2160;
-
-   private static readonly uint RESOLUTION_2K_WIDTH = 2560;
-   private static readonly uint RESOLUTION_2K_HEIGHT = 1440;
-   private static readonly uint MOUSE_RESTORE_THRESHOLD = 200;
-   private static readonly int SWEEP_SNAP_THRESHOLD = 150;
-   private static readonly int SWEEP_SNAP_HALFSPLIT_THRESHOLD = 500;
-   private static readonly double SWEEP_NO_RESIZE_THRESHOLD = 0.9;
-   private static readonly int TASKBAR_HEIGHT = 40;
-
-   public static string KEY_SHIFT = "16";
-   public static string KEY_CTRL = "17";
-   public static string KEY_ALT = "18";
-
-   private static readonly bool enableMouseMove = true;
-   private static readonly bool enableDebugPrints = true;
-   private static readonly bool prioritizeHidingDefault = true;
-   private static readonly bool keepRestoringDefault = true;
-   private static readonly bool enableForceRevive = true;
-   private static readonly bool enableFocusMode = true;
-   private static readonly bool enableSweepMode = true;
-   private static readonly bool enableSweepModeSnap = true;
-   private static readonly bool enableSweepModeSnapHalfSplit = true;
-   private static readonly bool enableBoundingBoxMode = true;
-   private static readonly bool debugPrintHideRevive = enableDebugPrints && false;
-   private static readonly bool debugPrintStartStop = enableDebugPrints && false;
-   private static readonly bool debugPrintFindMonitorId = enableDebugPrints && false;
-   private static readonly bool debugPrintNoMonitorFound = enableDebugPrints && true;
-   private static readonly bool debugWindowFiltering = enableDebugPrints && false;
-   private static readonly bool debugPrintMoveCursor = enableDebugPrints && false;
-   private static readonly bool debugPrintDecideMinRevive = enableDebugPrints && false;
-   private static readonly bool debugPrintCountToMin = enableDebugPrints && false;
-   private static readonly bool debugPrintForceReviveKey = enableDebugPrints && false;
-   private static readonly bool debugPrintFocusModeKey = enableDebugPrints && false;
-   private static readonly bool debugPrintFocusMode = enableDebugPrints && false;
-   private static readonly bool debugPrintSweepModeKey = enableDebugPrints && false;
-   private static readonly bool debugPrintSweepMode = enableDebugPrints && false;
-   private static readonly bool debugPrintSweepModeCalcPos = enableDebugPrints && false;
-   private static readonly bool debugPrintListOfWindows = enableDebugPrints && false;
-
-   private static string listOfWindowsToUnsweepStr = ""; // debug only
-   private static string listOfWindowsToHideStr = ""; // debug only
 
    private static OrderedDictionary unsweepWindowsInfoMap = new();
 
@@ -74,10 +74,11 @@ public static class DisplayFusionFunction
                                                                        "tooltips", "Shell_InputSwitchTopLevelWindow",
                                                                        "Windows.UI.Core.CoreWindow", "Progman", "SizeTipClass",
                                                                        "DF", "WorkerW", "SearchPane", "KbxLabelClass",
-                                                                       "WindowsForms10.tooltips_class", "Xaml_WindowedPopupClass"};
+                                                                       "WindowsForms10.tooltips_class", "Xaml_WindowedPopupClass",
+                                                                       "Ghost"};
    private static List<string> textBlacklist = new List<string> {"Program Manager", "Volume Mixer", "Snap Assist", "Greenshot capture form",
                                                                   "Battery Information", "Date and Time Information", "Network Connections",
-                                                                  "Volume Control", "Start", "Search"};
+                                                                  "Volume Control", "Start", "Search", "SubFolderTipWindow"};
    private static StringBuilder saveInfoStrBuilder = new();
 
    public static void Run(IntPtr windowHandle)
@@ -563,10 +564,14 @@ public static class DisplayFusionFunction
 
    public static void SweepOneWindow(IntPtr windowHandle, Rectangle boundingBox, Rectangle boundsFrom, Rectangle boundsTo)
    {
-      Rectangle windowBounds = WindowUtils.GetBounds(windowHandle);
+      Rectangle boundsWindow = WindowUtils.GetBounds(windowHandle);
+      bool boundsFromDoesntContain = !boundsFrom.Contains(boundsWindow);
+      bool boundingBoxDoesntContain = !boundingBox.Contains(boundsWindow);
 
-      string debugInfo = $"windowBounds: {windowBounds}\nboundingBox: {boundingBox}\nboundsFrom: {boundsFrom}\nboundsTo {boundsTo}";
+      string debugInfo = $"boundsWindow: {boundsWindow}\nboundingBox: {boundingBox}\nboundsFrom: {boundsFrom}\nboundsTo {boundsTo}\n\n" +
+                         $"boundsFromDoesntContain: {boundsFromDoesntContain}\nboundingBoxDoesntContain: {boundingBoxDoesntContain}";
       if (debugPrintSweepMode) MessageBox.Show($"SweepOneWindow:\n" + debugInfo);
+      if (boundsFromDoesntContain || boundingBoxDoesntContain) MessageBox.Show($"ERROR <min> SweepOneWindow:\n" + debugInfo);
 
       if (DetectedInvalidWindow(windowHandle, "SweepOneWindow", debugInfo)) return;
 
@@ -576,12 +581,12 @@ public static class DisplayFusionFunction
       if (BFS.Window.IsMaximized(windowHandle))
       {
          BFS.Window.Restore(windowHandle);
-         windowBounds = boundsFrom;
+         boundsWindow = boundsFrom;
       }
 
-      var result = CalculateSweptWindowPos(windowBounds, boundsFrom, boundsTo);
+      var result = CalculateSweptWindowPos(boundsWindow, boundingBox, boundsFrom, boundsTo);
 
-      WindowUtils.SetSizeAndLocation(windowHandle, result.newWindowBounds);
+      WindowUtils.SetSizeAndLocation(windowHandle, result.newBoundsWindow);
       WindowUtils.PushToTop(windowHandle);
 
       // maximize window when it is big enough
@@ -591,98 +596,125 @@ public static class DisplayFusionFunction
       }
    }
 
-   public static (bool shouldMaximize, Rectangle newWindowBounds) CalculateSweptWindowPos(Rectangle boundsWindow, Rectangle boundsFrom, Rectangle boundsTo)
+   public static (bool shouldMaximize, Rectangle newBoundsWindow) CalculateSweptWindowPos(
+                                                                           Rectangle boundingBox,
+                                                                           Rectangle boundsWindow,
+                                                                           Rectangle boundsFrom,
+                                                                           Rectangle boundsTo)
    {
-      return CalculateSweptWindowPosDynamic(boundsWindow, boundsFrom, boundsTo); // todo
+      if (boundingBox.Width <= RESOLUTION_2K_WIDTH && boundingBox.Height <= RESOLUTION_2K_HEIGHT) // or SWEEP_NO_RESIZE_THRESHOLD??
+      {
+         return CalculateSweptWindowPosOneToOne(boundsWindow, boundingBox, boundsFrom, boundsTo);
+
+      }
+
+      return CalculateSweptWindowPosDynamic(boundsWindow, boundingBox, boundsFrom, boundsTo);
    }
 
-   public static (bool shouldMaximize, Rectangle newWindowBounds) CalculateSweptWindowPosOneToOne(Rectangle boundsWindow, Rectangle boundsFrom, Rectangle boundsTo)
+   public static (bool shouldMaximize, Rectangle newBoundsWindow) CalculateSweptWindowPosOneToOne(
+                                                                           Rectangle boundingBox,
+                                                                           Rectangle boundsWindow,
+                                                                           Rectangle boundsFrom,
+                                                                           Rectangle boundsTo)
    {
-      return CalculateSweptWindowPosDynamic(boundsWindow, boundsFrom, boundsTo); // todo
+      // Rectangle newBoundsWindow = new Rectangle();
+      // bool shouldMaximize = false;
+
+      // return (shouldMaximize, newBoundsWindow);
+      return CalculateSweptWindowPosDynamic(boundingBox, boundsWindow, boundsFrom, boundsTo); // todo
    }
-   public static (bool shouldMaximize, Rectangle newWindowBounds) CalculateSweptWindowPosDynamic(Rectangle boundsWindow, Rectangle boundsFrom, Rectangle boundsTo)
+   public static (bool shouldMaximize, Rectangle newBoundsWindow) CalculateSweptWindowPosDynamic(
+                                                                           Rectangle boundingBox,
+                                                                           Rectangle boundsWindow,
+                                                                           Rectangle boundsFrom,
+                                                                           Rectangle boundsTo)
    {
-      bool doesntContain = !boundsFrom.Contains(boundsWindow);
-      Rectangle newWindowBounds = new Rectangle();
-      bool shouldMaximize = false;
+      Rectangle newBoundsWindow = new Rectangle();
+      bool shouldMaximize = ShouldMaximizeWindow(boundsWindow, boundsTo);
 
-      int maxWidth = (int)(SWEEP_NO_RESIZE_THRESHOLD * boundsTo.Width);
-      int maxHeight = (int)(SWEEP_NO_RESIZE_THRESHOLD * (boundsTo.Height - TASKBAR_HEIGHT));
+      if (shouldMaximize)
+      {
+         // set size to max bounds below which windows are not resized and position to center
+         // this will set the size to which window will restore when unmaximizing
+         newBoundsWindow = GetWindowPosNoResizeThreshold(boundsTo);
+         shouldMaximize = true;
 
-      if ((boundsWindow.Width < maxWidth) ||
-          (boundsWindow.Height < maxHeight))
+         if (debugPrintSweepModeCalcPos) MessageBox.Show($"\nboundsWindow\t{boundsWindow}\n" +
+                                             $"boundsFrom\t{boundsFrom}\n" +
+                                             $"boundsTo\t{boundsTo}\n\n" +
+                                             $"newBoundsWindow\t{newBoundsWindow}\n" +
+                                             $"noResizeMaxWidth\t{GetNoResizeMaxWidth(boundsTo)}\t" +
+                                             $"maxHeight\t{GetNoResizeMaxHeight(boundsTo)}\n" +
+                                             $"shouldMaximize:\t{shouldMaximize}");
+      }
+      else // should NOT maximize
       {
          // small window in at least one direction, don't change size for now
-         newWindowBounds.Width = boundsWindow.Width;
-         newWindowBounds.Height = boundsWindow.Height;
+         newBoundsWindow.Width = boundsWindow.Width;
+         newBoundsWindow.Height = boundsWindow.Height;
 
          // calculate how far is the window from old monitor borders (ignore taskbar size because of autohide)
-         int leftDistOld = ClipBottom(boundsWindow.X - boundsFrom.X) + 1;
-         int rightDistOld = ClipBottom((boundsFrom.X + boundsFrom.Width) - (boundsWindow.X + boundsWindow.Width)) + 1;
-         int topDistOld = ClipBottom(boundsWindow.Y - boundsFrom.Y) + 1;
-         int bottomDistOld = ClipBottom((boundsFrom.Y + boundsFrom.Height) - (boundsWindow.Y + boundsWindow.Height)) + 1;
+         var borderDistances = CalculateBorderDistances(boundsWindow, boundsFrom);
 
          // calculate left-right (horizontal) and top-bottom (vertical) ratios of window position
-         double horizontalRatio = (double)leftDistOld / (leftDistOld + rightDistOld);
-         double verticalRatio = (double)topDistOld / (topDistOld + bottomDistOld);
+         var ratios = CalculateRatios(borderDistances.left, borderDistances.right, borderDistances.top, borderDistances.bottom);
 
          // calculate how much free space there will be on new monitor outside of the window
-         int horizontalSpace = boundsTo.Width - newWindowBounds.Width;
-         int verticalSpace = boundsTo.Height - newWindowBounds.Height - TASKBAR_HEIGHT;
+         var freeSpace = CalculateSpaceToBorders(boundsTo, newBoundsWindow.Width, newBoundsWindow.Height);
 
-         if (horizontalSpace > 0)
+         if (freeSpace.horizontal > 0)
          {
             // set position to preserve left-right ratio from old monitor
-            newWindowBounds.X = boundsTo.X + (int)(horizontalRatio * horizontalSpace);
+            newBoundsWindow.X = boundsTo.X + (int)(ratios.horizontal * freeSpace.horizontal);
          }
-         else // horizontalSpace < 0
+         else // freeSpace.horizontal <= 0
          {
             // there is no space left, max out window horizontally
-            newWindowBounds.X = boundsTo.X;
+            newBoundsWindow.X = boundsTo.X;
             // override window witdth, it needs to be smaller
-            newWindowBounds.Width = boundsTo.Width;
+            newBoundsWindow.Width = boundsTo.Width;
 
             // optionally snap top or bottom if window was resized horizontally
             if (enableSweepModeSnap)
             {
-               int topDistNew = newWindowBounds.Y - boundsTo.Y;
-               int bottomDistNew = (boundsTo.Y + boundsTo.Height - TASKBAR_HEIGHT) - (newWindowBounds.Y + newWindowBounds.Height);
+               int topDistNew = newBoundsWindow.Y - boundsTo.Y;
+               int bottomDistNew = (boundsTo.Y + boundsTo.Height - TASKBAR_HEIGHT) - (newBoundsWindow.Y + newBoundsWindow.Height);
 
                if (topDistNew < SWEEP_SNAP_THRESHOLD)
                {
                   if (debugPrintSweepModeCalcPos) MessageBox.Show($"Snap top");
-                  newWindowBounds.Y = 0; // snap window to top, no size change
+                  newBoundsWindow.Y = 0; // snap window to top, no size change
                }
 
                if (bottomDistNew < SWEEP_SNAP_THRESHOLD)
                {
                   if (debugPrintSweepModeCalcPos) MessageBox.Show($"Snap bottom");
-                  newWindowBounds.Y = boundsTo.Height - TASKBAR_HEIGHT - newWindowBounds.Height; // snap window to bottom, no size change
+                  newBoundsWindow.Y = boundsTo.Height - TASKBAR_HEIGHT - newBoundsWindow.Height; // snap window to bottom, no size change
                }
 
                if (debugPrintSweepModeCalcPos) MessageBox.Show($"topDistNew {topDistNew}\nbottomDistNew {bottomDistNew}\n\n" +
-                                                $"newWindowBounds.Y {newWindowBounds.Y}");
+                                                $"newBoundsWindow.Y {newBoundsWindow.Y}");
             }
 
          }
 
-         if (verticalSpace > 0)
+         if (freeSpace.vertical > 0)
          {
             // set position to preserve top-bottom ratio from old monitor
-            newWindowBounds.Y = boundsTo.Y + (int)(verticalRatio * verticalSpace);
+            newBoundsWindow.Y = boundsTo.Y + (int)(ratios.vertical * freeSpace.vertical);
          }
-         else // verticalSpace < 0
+         else // freeSpace.vertical <= 0
          {
             // there is no space left, max out window vertically
-            newWindowBounds.Y = boundsTo.Y;
+            newBoundsWindow.Y = boundsTo.Y;
             // override window height, it needs to be smaller
-            newWindowBounds.Height = boundsTo.Height - TASKBAR_HEIGHT;
+            newBoundsWindow.Height = boundsTo.Height - TASKBAR_HEIGHT;
 
             // optionally snap left or right if window was resized vertically
             if (enableSweepModeSnap)
             {
-               int leftDistNew = newWindowBounds.X - boundsTo.X;
-               int rightDistNew = (boundsTo.X + boundsTo.Width) - (newWindowBounds.X + newWindowBounds.Width);
+               int leftDistNew = newBoundsWindow.X - boundsTo.X;
+               int rightDistNew = (boundsTo.X + boundsTo.Width) - (newBoundsWindow.X + newBoundsWindow.Width);
 
                // check if old window width was near to half split of the source monitor
                bool widthEligibleForHalfSplit = boundsWindow.Width < (boundsFrom.Width / 2 + SWEEP_SNAP_HALFSPLIT_THRESHOLD) &&
@@ -691,12 +723,12 @@ public static class DisplayFusionFunction
                if (leftDistNew < SWEEP_SNAP_THRESHOLD)
                {
                   if (debugPrintSweepModeCalcPos) MessageBox.Show($"Snap left");
-                  newWindowBounds.X = 0; // snap window to left, no size change
+                  newBoundsWindow.X = 0; // snap window to left, no size change
 
                   if (enableSweepModeSnapHalfSplit && widthEligibleForHalfSplit)
                   {
                      if (debugPrintSweepModeCalcPos) MessageBox.Show($"Snap to vertical half split on right");
-                     newWindowBounds.Width = boundsTo.Width / 2;
+                     newBoundsWindow.Width = boundsTo.Width / 2;
                   }
                }
 
@@ -707,51 +739,111 @@ public static class DisplayFusionFunction
                   if (enableSweepModeSnapHalfSplit && widthEligibleForHalfSplit)
                   {
                      if (debugPrintSweepModeCalcPos) MessageBox.Show($"Snap to vertical half split on left");
-                     newWindowBounds.Width = boundsTo.Width / 2;
+                     newBoundsWindow.Width = boundsTo.Width / 2;
                   }
 
-                  newWindowBounds.X = boundsTo.Width - newWindowBounds.Width; // snap window to right after optional size change
+                  newBoundsWindow.X = boundsTo.Width - newBoundsWindow.Width; // snap window to right after optional size change
                }
 
                if (debugPrintSweepModeCalcPos) MessageBox.Show($"leftDistNew {leftDistNew}\nrightDistNew {rightDistNew}\n\n" +
-                                                               $"newWindowBounds.X {newWindowBounds.X}");
+                                                               $"newBoundsWindow.X {newBoundsWindow.X}");
             }
          }
 
-         bool sizeWarning = newWindowBounds.Width < 20 || newWindowBounds.Width > 3840 ||
-                        newWindowBounds.Height < 20 || newWindowBounds.Height > 2160 ||
-                        newWindowBounds.X < -3840 || newWindowBounds.X > 2160 ||
-                        newWindowBounds.Y < -2160 || newWindowBounds.Y > (2160 + 1920);
+         bool sizeWarning = newBoundsWindow.Width < 20 || newBoundsWindow.Width > 3840 ||
+                        newBoundsWindow.Height < 20 || newBoundsWindow.Height > 2160 ||
+                        newBoundsWindow.X < -3840 || newBoundsWindow.X > 2160 ||
+                        newBoundsWindow.Y < -2160 || newBoundsWindow.Y > (2160 + 1920);
+         bool doesntContain = !boundsFrom.Contains(boundsWindow);
 
          if (debugPrintSweepModeCalcPos || sizeWarning || doesntContain) MessageBox.Show($"sizeWarning? {sizeWarning}\tdoesntContain? {doesntContain}\n" +
                          $"listOfWindowsToUnsweep {listOfWindowsToUnsweepStr}\n" +
                          $"listOfWindowsToHide {listOfWindowsToHideStr}\n\n" +
                          $"boundsWindow\t{boundsWindow}\nboundsFrom\t{boundsFrom}\nboundsTo\t{boundsTo}\n\n" +
-                         $"leftDistOld {leftDistOld}\nrightDistOld {rightDistOld}\ntopDistOld {topDistOld}\nbottomDistOld {bottomDistOld}\n\n" +
-                         $"horizontalRatio {horizontalRatio}\nverticalRatio {verticalRatio}\n\n" +
-                         $"horizontalSpace {horizontalSpace}\nverticalSpace {verticalSpace}\n\n" +
-                         $"newWindowBounds.X {newWindowBounds.X}\nnewWindowBounds.Y {newWindowBounds.Y}\n\n" +
-                         $"newWindowBounds.Width {newWindowBounds.Width}\nnewWindowBounds.Height {newWindowBounds.Height}");
+                         $"borderDistances.left {borderDistances.left}\nborderDistances.right {borderDistances.right}\n" +
+                         $"borderDistances.top {borderDistances.top}\nborderDistances.bottom {borderDistances.bottom}\n\n" +
+                         $"horizontalRatio {ratios.horizontal}\nverticalRatio {ratios.vertical}\n\n" +
+                         $"horizontalSpace {freeSpace.horizontal}\nverticalSpace {freeSpace.vertical}\n\n" +
+                         $"newBoundsWindow.X {newBoundsWindow.X}\nnewBoundsWindow.Y {newBoundsWindow.Y}\n\n" +
+                         $"newBoundsWindow.Width {newBoundsWindow.Width}\nnewBoundsWindow.Height {newBoundsWindow.Height}");
+      }
+
+
+      return (shouldMaximize, newBoundsWindow);
+   }
+
+   public static Rectangle GetWindowPosNoResizeThreshold(Rectangle boundsTo)
+   {
+      int noResizeMaxWidth = GetNoResizeMaxWidth(boundsTo);
+      int noResizeMaxHeight = GetNoResizeMaxHeight(boundsTo);
+
+      return new Rectangle(
+         boundsTo.X + (boundsTo.Width - noResizeMaxWidth) / 2,
+         boundsTo.Y + (boundsTo.Height - noResizeMaxHeight) / 2,
+         noResizeMaxWidth,
+         noResizeMaxHeight
+      );
+   }
+
+   public static int GetNoResizeMaxWidth(Rectangle boundsTo)
+   {
+      return (int)(SWEEP_NO_RESIZE_THRESHOLD * boundsTo.Width);
+   }
+   public static int GetNoResizeMaxHeight(Rectangle boundsTo, int taskbar = TASKBAR_HEIGHT)
+   {
+      return (int)(SWEEP_NO_RESIZE_THRESHOLD * (boundsTo.Height - taskbar));
+   }
+   public static bool ShouldMaximizeWindow(Rectangle boundsWindow, Rectangle boundsTo)
+   {
+      return (boundsWindow.Width >= GetNoResizeMaxWidth(boundsTo)) &&
+             (boundsWindow.Height >= GetNoResizeMaxHeight(boundsTo));
+   }
+
+   public static (int left, int right, int top, int bottom) CalculateBorderDistances(Rectangle boundsWindow,
+                                                                                     Rectangle boundsMonitor)
+   {
+      if (!boundsMonitor.Contains(boundsWindow))
+         MessageBox.Show($"ERROR <min> CalculateBorderDistances:\nboundsFrom {boundsMonitor}\ndoesn't contain\nboundsWindow {boundsWindow}");
+
+      int left = ClipBottom(boundsWindow.X - boundsMonitor.X); // +1
+      int right = ClipBottom((boundsMonitor.X + boundsMonitor.Width) - (boundsWindow.X + boundsWindow.Width)); // +1
+      int top = ClipBottom(boundsWindow.Y - boundsMonitor.Y); // +1
+      int bottom = ClipBottom((boundsMonitor.Y + boundsMonitor.Height) - (boundsWindow.Y + boundsWindow.Height)); // +1
+
+      return (left, right, top, bottom);
+   }
+
+   public static (double horizontal, double vertical) CalculateRatios(int left, int right, int top, int bottom)
+   {
+      double horizontal = 0.5;
+      if ((left + right) == 0)
+      {
+         MessageBox.Show($"WARN <min> CalculateRatios (left + right) == 0");
       }
       else
       {
-         // set size to max bounds below which windows are not resized
-         // this will set the size to which window will restore when unmaximizing
-         newWindowBounds.X = boundsTo.X + (boundsTo.Width - maxWidth) / 2;
-         newWindowBounds.Y = boundsTo.Y + (boundsTo.Height - maxHeight) / 2;
-         newWindowBounds.Width = maxWidth;
-         newWindowBounds.Height = maxHeight;
-         shouldMaximize = true;
-
-         if (debugPrintSweepModeCalcPos) MessageBox.Show($"\nboundsWindow\t{boundsWindow}\n" +
-                                             $"boundsFrom\t{boundsFrom}\n" +
-                                             $"boundsTo\t{boundsTo}\n\n" +
-                                             $"newWindowBounds\t{newWindowBounds}\n" +
-                                             $"maxWidth\t{maxWidth}\tmaxHeight\t{maxHeight}\n" +
-                                             $"shouldMaximize:\t{shouldMaximize}");
+         horizontal = (double)left / (left + right);
       }
 
-      return (shouldMaximize, newWindowBounds);
+      double vertical = 0.5;
+      if ((top + bottom) == 0)
+      {
+         MessageBox.Show($"WARN <min> CalculateRatios (top + bottom) == 0");
+      }
+      else
+      {
+         vertical = (double)top / (top + bottom);
+      }
+
+      return (horizontal, vertical);
+   }
+
+   public static (int horizontal, int vertical) CalculateSpaceToBorders(Rectangle boundsMonitor, int windowWitdth, int windowHeight)
+   {
+      int horizontal = boundsMonitor.Width - windowWitdth;
+      int vertical = boundsMonitor.Height - windowHeight - TASKBAR_HEIGHT;
+
+      return (horizontal, vertical);
    }
 
    public static Rectangle CalculateBoundingBox(IntPtr[] windowHandles)
@@ -771,14 +863,14 @@ public static class DisplayFusionFunction
       Rectangle boundingBox = WindowUtils.GetBounds(windowHandles[0]);
       foreach (IntPtr windowHandle in windowHandles)
       {
-         Rectangle windowBounds = WindowUtils.GetBounds(windowHandle);
-         boundingBox = Rectangle.Union(boundingBox, windowBounds);
+         Rectangle boundsWindow = WindowUtils.GetBounds(windowHandle);
+         boundingBox = Rectangle.Union(boundingBox, boundsWindow);
 
-         bool doesntContain = !boundingBox.Contains(windowBounds);
+         bool doesntContain = !boundingBox.Contains(boundsWindow);
          if (doesntContain) MessageBox.Show($"CalculateBoundingBox \n\n" +
                          $"|{BFS.Window.GetText(windowHandle)}|\n\n" +
                          $"doesntContain? {doesntContain} \n\n" +
-                         $"windowBounds {windowBounds}\nnot in\nboundingBox {boundingBox}");
+                         $"boundsWindow {boundsWindow}\nnot in\nboundingBox {boundingBox}");
       }
 
       return boundingBox;
@@ -1065,6 +1157,7 @@ public static class DisplayFusionFunction
 
    public static int ClipBottom(int val)
    {
+      if (val < 0) MessageBox.Show($"WARN <min> Clipping bottom: {val}");
       return val < 0 ? 0 : val;
    }
 
@@ -1160,23 +1253,23 @@ public static class DisplayFusionFunction
          public uint dwFlags;   // Monitor flags
       }
 
-      private static readonly int SW_SHOWNORMAL = 1;
-      private static readonly int SW_SHOWMINIMIZED = 2;
-      private static readonly int SW_SHOWMAXIMIZED = 3; // SW_MAXIMIZE
-      private static readonly int SW_SHOWNOACTIVATE = 4;
-      private static readonly int SW_SHOW = 5;
-      private static readonly int SW_MINIMIZE = 6;
-      private static readonly int SW_SHOWMINNOACTIVE = 7;
-      private static readonly int SW_SHOWNA = 8;
-      private static readonly int SW_RESTORE = 9;
-      private static readonly int DWMWA_EXTENDED_FRAME_BOUNDS = 0x9;
-      private static readonly uint MONITOR_DEFAULTTONEAREST = 2;
-      private static readonly uint SWP_NOSIZE = 0x0001;
-      private static readonly uint SWP_NOMOVE = 0x0002;
-      private static readonly uint SWP_NOACTIVATE = 0x0010;
-      private static readonly uint SWP_NOOWNERZORDER = 0x0200;
-      private static readonly uint SWP_NOZORDER = 0x0004;
-      private static readonly uint SWP_FRAMECHANGED = 0x0020;
+      private const int SW_SHOWNORMAL = 1;
+      private const int SW_SHOWMINIMIZED = 2;
+      private const int SW_SHOWMAXIMIZED = 3; // SW_MAXIMIZE
+      private const int SW_SHOWNOACTIVATE = 4;
+      private const int SW_SHOW = 5;
+      private const int SW_MINIMIZE = 6;
+      private const int SW_SHOWMINNOACTIVE = 7;
+      private const int SW_SHOWNA = 8;
+      private const int SW_RESTORE = 9;
+      private const int DWMWA_EXTENDED_FRAME_BOUNDS = 0x9;
+      private const uint MONITOR_DEFAULTTONEAREST = 2;
+      private const uint SWP_NOSIZE = 0x0001;
+      private const uint SWP_NOMOVE = 0x0002;
+      private const uint SWP_NOACTIVATE = 0x0010;
+      private const uint SWP_NOOWNERZORDER = 0x0200;
+      private const uint SWP_NOZORDER = 0x0004;
+      private const uint SWP_FRAMECHANGED = 0x0020;
 
       private static bool GetRectangleExcludingShadow(IntPtr handle, out RECT rect)
       {
