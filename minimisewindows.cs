@@ -11,12 +11,14 @@ using System.Drawing;
 using System.Windows.Forms;
 using System.Collections;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Collections.Specialized;
 using System.Text.RegularExpressions;
 
 using System.IO;
-
+using System.Threading;
+using System.Threading.Tasks;
 
 public static class DisplayFusionFunction
 {
@@ -151,6 +153,9 @@ public static class DisplayFusionFunction
 
         if (debugPrintListOfWindows) MessageBox.Show($"END\n\nlistofwindowsto unsweep:\n\n{listOfWindowsToUnsweepStr}\n\n" +
                                                     $"listofwindowsto hide:\n\n{listOfWindowsToHideStr}");
+
+        Log.D("END", new { listOfWindowsToUnsweepStr, listOfWindowsToHideStr });
+        // Log.Flush();
     }
 
     private static bool WereWindowsMinimized()
@@ -1606,6 +1611,14 @@ public static class DisplayFusionFunction
 
     public static class Log
     {
+        private const int BUFFER_FLUSH_SIZE = 100;
+        private const int BUFFER_FLUSH_MS = 2000;
+        private const int BUFFER_CAPACITY = 200;
+
+        private static readonly BlockingCollection<string> _logQueue = new BlockingCollection<string>(BUFFER_CAPACITY);
+        private static readonly CancellationTokenSource _cts = new CancellationTokenSource();
+        private static Task _flushTask;
+
         private static readonly object _lock = new object();
         private static readonly object _configLock = new object();
         private static readonly string LogFilePath;
@@ -1642,6 +1655,9 @@ public static class DisplayFusionFunction
                 string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
                 LogFilePath = Path.Combine(logDir, $"{FILENAME_PREFIX}{timestamp}.txt");
                 File.WriteAllText(LogFilePath, $"Application Log - {DateTime.Now}\n\n");
+
+                StartFlushThread();
+                AppDomain.CurrentDomain.ProcessExit += (s, e) => Shutdown();
             }
             catch (Exception ex)
             {
@@ -1650,6 +1666,63 @@ public static class DisplayFusionFunction
                               MessageBoxButtons.OK,
                               MessageBoxIcon.Error);
             }
+        }
+
+        private static void StartFlushThread()
+        {
+            _flushTask = Task.Run(() =>
+            {
+                var buffer = new StringBuilder();
+                var lastFlush = DateTime.UtcNow;
+
+                while (!_cts.IsCancellationRequested)
+                {
+                    try
+                    {
+                        // get log from queue with timeout
+                        if (_logQueue.TryTake(out var entry, BUFFER_FLUSH_MS, _cts.Token))
+                        {
+                            buffer.Append(entry);
+                        }
+
+                        // conditions to write to file
+                        bool shouldFlush = buffer.Length > 0 && (
+                            buffer.Length >= BUFFER_FLUSH_SIZE * 100 ||  // approx size
+                            (DateTime.UtcNow - lastFlush).TotalMilliseconds >= BUFFER_FLUSH_MS
+                        );
+
+                        if (shouldFlush)
+                        {
+                            FlushBuffer(buffer);
+                            lastFlush = DateTime.UtcNow;
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+                }
+
+                // final flush of remaining logs
+                FlushBuffer(buffer);
+            });
+        }
+
+        private static void FlushBuffer(StringBuilder buffer)
+        {
+            if (buffer.Length == 0) return;
+
+            lock (_lock)
+            {
+                File.AppendAllText(LogFilePath, buffer.ToString());
+                buffer.Clear();
+            }
+        }
+
+        private static void Shutdown()
+        {
+            _cts.Cancel();
+            _flushTask?.Wait(3000);  // max 3 sec for finalization
         }
 
         public static void SetMessageBoxDefault(LogLevel level, bool showByDefault)
@@ -1687,22 +1760,21 @@ public static class DisplayFusionFunction
 
                 string logEntry = skipHeader ?
                      $"{message}\n" :
-                     $"{DateTime.Now:HH:mm:ss} [{level.ToShortString()}] {message}\n";
+                     $"{DateTime.Now:HH:mm:ss} [{level.ToShortString()}]\t{message}\n";
 
-                lock (_lock)
+                // add to log queue instead of direct write
+                if (!_logQueue.TryAdd(logEntry, 50))  // timeout 50ms
                 {
-                    File.AppendAllText(LogFilePath, logEntry);
+                    // emergency buffer clear when overflowing
+                    if (_logQueue.Count > BUFFER_CAPACITY * 2)
+                    {
+                        _logQueue.Dispose();
+                        StartFlushThread();
+                    }
                 }
 
-                bool levelDefault;
-                lock (_configLock)
-                {
-                    _messageBoxDefaults.TryGetValue(level, out levelDefault);
-                }
-
-                bool shouldShow = EnableMessageBoxes && (showMessageBox ?? levelDefault);
-
-                if (shouldShow)
+                // MessageBox stays sync
+                if (ShouldShowMessageBox(level, showMessageBox))
                 {
                     ShowMessage(level, message, skipHeader);
                 }
@@ -1716,6 +1788,19 @@ public static class DisplayFusionFunction
             }
         }
 
+        private static bool ShouldShowMessageBox(LogLevel level, bool? showMessageBox)
+        {
+            lock (_configLock)
+            {
+                return EnableMessageBoxes && (showMessageBox ?? _messageBoxDefaults[level]);
+            }
+        }
+
+        public static void Flush()
+        {
+            _flushTask?.Wait(1000);
+        }
+
         private static string BuildMessageWithVariables(string message, object variables)
         {
             var sb = new StringBuilder(message ?? "");
@@ -1725,6 +1810,7 @@ public static class DisplayFusionFunction
                 string variablesString = SerializeVariables(variables);
                 if (!string.IsNullOrEmpty(variablesString))
                 {
+                    if (message.Length == 0 && variablesString.Length >= 4) variablesString = variablesString.Substring(4);
                     if (sb.Length > 0) sb.AppendLine();
                     sb.Append(variablesString);
                 }
@@ -1744,7 +1830,7 @@ public static class DisplayFusionFunction
             foreach (var prop in properties)
             {
                 var value = prop.GetValue(variables);
-                sb.AppendLine($"\t\t\t\t{prop.Name}: {SerializeObject(value)}");
+                sb.AppendLine(AddLeadingTabs($"{prop.Name}: {SerializeObject(value)}"));
             }
 
             if (sb.Length > 1) sb.Length -= 2; // remove newline
@@ -1805,6 +1891,16 @@ public static class DisplayFusionFunction
             // The RegexOptions.Multiline flag makes the ^ anchor match at the start of each line.
             return Regex.Replace(message, @"^\t+", " ", RegexOptions.Multiline);
         }
+
+        public static string AddLeadingTabs(string message)
+        {
+            if (message == null)
+                return null;
+
+            // The regex pattern ^ matches the beginning of a line.
+            // The RegexOptions.Multiline flag makes the ^ anchor match at the start of each line.
+            return Regex.Replace(message, @"^", "\t\t\t\t", RegexOptions.Multiline);
+        }
     } // Log
 
 
@@ -1820,7 +1916,7 @@ public static class LogLevelExtensions
             DisplayFusionFunction.Log.LogLevel.Warning => "WAR",
             DisplayFusionFunction.Log.LogLevel.Info => "INF",
             DisplayFusionFunction.Log.LogLevel.Debug => "DBG",
-            _ => logLevel.ToString() // fallback, though all cases are handled
+            _ => logLevel.ToString()
         };
     }
 }
