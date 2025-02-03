@@ -154,8 +154,7 @@ public static class DisplayFusionFunction
         if (debugPrintListOfWindows) MessageBox.Show($"END\n\nlistofwindowsto unsweep:\n\n{listOfWindowsToUnsweepStr}\n\n" +
                                                     $"listofwindowsto hide:\n\n{listOfWindowsToHideStr}");
 
-        Log.D("END", new { listOfWindowsToUnsweepStr, listOfWindowsToHideStr });
-        // Log.Flush();
+        Log.D("END", new { listOfWindowsToUnsweepStr, listOfWindowsToHideStr, focusmode = IsFocusModeRequested() });
     }
 
     private static bool WereWindowsMinimized()
@@ -1796,11 +1795,6 @@ public static class DisplayFusionFunction
             }
         }
 
-        public static void Flush()
-        {
-            _flushTask?.Wait(1000);
-        }
-
         private static string BuildMessageWithVariables(string message, object variables)
         {
             var sb = new StringBuilder(message ?? "");
@@ -1902,8 +1896,6 @@ public static class DisplayFusionFunction
             return Regex.Replace(message, @"^", "\t\t\t\t", RegexOptions.Multiline);
         }
     } // Log
-
-
 }
 
 public static class LogLevelExtensions
