@@ -15,6 +15,7 @@ using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Collections.Specialized;
 using System.Text.RegularExpressions;
+using System.Runtime.CompilerServices;
 
 using System.IO;
 using System.Threading;
@@ -959,13 +960,13 @@ public static class DisplayFusionFunction
 
     public static void CacheAll()
     {
-        CacheForceReviveRequeste();
+        CacheForceReviveRequest();
         CacheFocusModeRequest();
         CacheSweepModeRequest();
         CacheActiveWindow();
     }
 
-    public static void CacheForceReviveRequeste()
+    public static void CacheForceReviveRequest()
     {
         // bool ForceReviveRequestedCache = BFS.Input.IsMouseDown("1;");
         ForceReviveRequestedCache = BFS.Input.IsKeyDown(KEY_SHIFT);
@@ -1732,22 +1733,52 @@ public static class DisplayFusionFunction
             }
         }
 
-        public static void E(string message, object variables = null, bool? showMessageBox = null,
-             bool skipHeader = false)
-            => LogInternal(LogLevel.Error, message, variables, showMessageBox, skipHeader);
+        public static void E(string message,
+                               object variables = null,
+                               bool? showMessageBox = null,
+                               bool skipHeader = false,
+                               [CallerMemberName] string memberName = "",
+                               [CallerLineNumber] int lineNumber = 0)
+               => LogInternal(LogLevel.Error, message, variables, showMessageBox, skipHeader, memberName, lineNumber);
 
-        public static void W(string message, object variables = null, bool? showMessageBox = null, bool skipHeader = false)
-            => LogInternal(LogLevel.Warning, message, variables, showMessageBox, skipHeader);
+        public static void W(string message,
+                            object variables = null,
+                            bool? showMessageBox = null,
+                            bool skipHeader = false,
+                            [CallerMemberName] string memberName = "",
+                            [CallerLineNumber] int lineNumber = 0)
+            => LogInternal(LogLevel.Warning, message, variables, showMessageBox, skipHeader, memberName, lineNumber);
 
-        public static void I(string message, object variables = null, bool? showMessageBox = null, bool skipHeader = false)
-            => LogInternal(LogLevel.Info, message, variables, showMessageBox, skipHeader);
+        public static void I(string message,
+                            object variables = null,
+                            bool? showMessageBox = null,
+                            bool skipHeader = false,
+                            [CallerMemberName] string memberName = "",
+                            [CallerLineNumber] int lineNumber = 0)
+            => LogInternal(LogLevel.Info, message, variables, showMessageBox, skipHeader, memberName, lineNumber);
 
-        public static void D(string message, object variables = null, bool? showMessageBox = null, bool skipHeader = false)
-            => LogInternal(LogLevel.Debug, message, variables, showMessageBox, skipHeader);
+        public static void D(string message,
+                            object variables = null,
+                            bool? showMessageBox = null,
+                            bool skipHeader = false,
+                            [CallerMemberName] string memberName = "",
+                            [CallerLineNumber] int lineNumber = 0)
+            => LogInternal(LogLevel.Debug, message, variables, showMessageBox, skipHeader, memberName, lineNumber);
 
-        private static void LogInternal(LogLevel level, string message, object variables, bool? showMessageBox, bool skipHeader)
+        private static void LogInternal(LogLevel level,
+                                       string message,
+                                       object variables,
+                                       bool? showMessageBox,
+                                       bool skipHeader,
+                                       string memberName,
+                                       int lineNumber)
         {
-            string fullMessage = BuildMessageWithVariables(message, variables);
+            string formattedMessage = $"{message}";
+            if (!skipHeader)
+            {
+                formattedMessage = $"{memberName}():{lineNumber}> {message}";
+            }
+            string fullMessage = BuildMessageWithVariables(formattedMessage, variables);
             WriteLog(level, fullMessage, showMessageBox, skipHeader);
         }
 
