@@ -1627,7 +1627,7 @@ public static class DisplayFusionFunction
         private static readonly BlockingCollection<string> _logQueue = new BlockingCollection<string>(BUFFER_CAPACITY);
         private static readonly CancellationTokenSource _cts = new CancellationTokenSource();
         private static Task _flushTask;
-
+        private static readonly ConcurrentDictionary<Type, PropertyInfo[]> _propertyCache = new();
         private static readonly object _lock = new object();
         private static readonly object _configLock = new object();
         private static readonly string LogFilePath;
@@ -1935,7 +1935,7 @@ public static class DisplayFusionFunction
 
             var sb = new StringBuilder("");
             var type = variables.GetType();
-            var properties = type.GetProperties();
+            var properties = _propertyCache.GetOrAdd(type, t => t.GetProperties());
 
             foreach (var prop in properties)
             {
