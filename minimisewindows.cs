@@ -1880,15 +1880,20 @@ public static class DisplayFusionFunction
             };
         }
 
-        private static string SerializeCollection(System.Collections.IEnumerable collection, int depth)
+        private static string SerializeCollection(IEnumerable collection, int depth)
         {
             var sb = new StringBuilder("[");
+            int count = 0;
+
             foreach (var item in collection)
             {
                 sb.Append($"{SerializeObject(item, depth + 1)}, ");
+                count++;
             }
-            if (sb.Length > 1) sb.Length -= 2;
-            sb.Append("]");
+
+            if (sb.Length > 1) sb.Length -= 2; // remove last comma and space
+            sb.Append($"] ({count})");
+
             return sb.ToString();
         }
 
