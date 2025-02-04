@@ -1722,6 +1722,7 @@ public static class DisplayFusionFunction
                     variables: null,
                     showMessageBox: _showMessageBox,
                     skipHeader: false,
+                    condition: () => true,
                     memberName: _memberName,
                     lineNumber: _lineNumber
                 );
@@ -1739,7 +1740,7 @@ public static class DisplayFusionFunction
                 string filename = singleLogMode ? "log.txt" : $"{FILENAME_PREFIX}{timestamp}.txt";
                 LogFilePath = Path.Combine(logDir, filename);
 
-                File.WriteAllText(LogFilePath, $"Application Log - {DateTime.Now}\n\n");
+                File.WriteAllText(LogFilePath, $"Application Log - {DateTime.Now}");
 
                 StartFlushThread();
                 AppDomain.CurrentDomain.ProcessExit += (s, e) => Shutdown();
@@ -1822,41 +1823,51 @@ public static class DisplayFusionFunction
                                object variables = null,
                                bool? showMessageBox = null,
                                bool skipHeader = false,
+                            Func<bool> condition = null,
                                [CallerMemberName] string memberName = "",
                                [CallerLineNumber] int lineNumber = 0)
-               => LogInternal(LogLevel.Error, message, variables, showMessageBox, skipHeader, memberName, lineNumber);
+               => LogInternal(LogLevel.Error, message, variables, showMessageBox, skipHeader, condition, memberName, lineNumber);
 
         public static void W(string message,
                             object variables = null,
                             bool? showMessageBox = null,
                             bool skipHeader = false,
+                            Func<bool> condition = null,
                             [CallerMemberName] string memberName = "",
                             [CallerLineNumber] int lineNumber = 0)
-            => LogInternal(LogLevel.Warning, message, variables, showMessageBox, skipHeader, memberName, lineNumber);
+            => LogInternal(LogLevel.Warning, message, variables, showMessageBox, skipHeader, condition, memberName, lineNumber);
 
         public static void I(string message,
                             object variables = null,
                             bool? showMessageBox = null,
                             bool skipHeader = false,
+                            Func<bool> condition = null,
                             [CallerMemberName] string memberName = "",
                             [CallerLineNumber] int lineNumber = 0)
-            => LogInternal(LogLevel.Info, message, variables, showMessageBox, skipHeader, memberName, lineNumber);
+            => LogInternal(LogLevel.Info, message, variables, showMessageBox, skipHeader, condition, memberName, lineNumber);
 
         public static void D(string message,
                             object variables = null,
                             bool? showMessageBox = null,
                             bool skipHeader = false,
+                            Func<bool> condition = null,
                             [CallerMemberName] string memberName = "",
                             [CallerLineNumber] int lineNumber = 0)
-            => LogInternal(LogLevel.Debug, message, variables, showMessageBox, skipHeader, memberName, lineNumber);
+            => LogInternal(LogLevel.Debug, message, variables, showMessageBox, skipHeader, condition, memberName, lineNumber);
 
         private static void LogInternal(LogLevel level,
                                        string message,
                                        object variables,
                                        bool? showMessageBox,
                                        bool skipHeader,
+                                       Func<bool> condition,
                                        string memberName,
                                        int lineNumber)
+        {
+            // unless condition func was provided assume log should be written
+            condition ??= () => true;
+
+            if (condition())
         {
             string formattedMessage = $"{message}";
             if (!skipHeader)
@@ -1865,6 +1876,7 @@ public static class DisplayFusionFunction
             }
             string fullMessage = BuildMessageWithVariables(formattedMessage, variables);
             WriteLog(level, fullMessage, showMessageBox, skipHeader);
+            }
         }
 
         private static void WriteLog(LogLevel level, string message, bool? showMessageBox, bool skipHeader)
