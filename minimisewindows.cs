@@ -53,6 +53,7 @@ public static class DisplayFusionFunction
     private const bool enableSweepModeSnap = true;
     private const bool enableSweepModeSnapHalfSplit = true;
     private const bool enableBoundingBoxMode = true;
+    public const bool enableLogStartTimer = true;
     private const bool debugPrintHideRevive = enableDebugPrints && false;
     private const bool debugPrintStartStop = enableDebugPrints && false;
     private const bool debugPrintFindMonitorId = enableDebugPrints && false;
@@ -93,9 +94,9 @@ public static class DisplayFusionFunction
 
     public static void Run(IntPtr windowHandle)
     {
-        using (Log.T("whole program", Log.LogLevel.Info))
+        using (Log.T("whole program", Log.LogLevel.Info, disableStartLog: true))
         {
-            using (Log.T("Initialization")) { Init(); }
+            using (Log.T("Initialization", disableStartLog: true)) { Init(); }
 
             IntPtr[] windowsToHide;
             using (Log.T("GetListOfWindowsToHide")) { windowsToHide = GetListOfWindowsToHide(GetOledMonitorID()); }
@@ -1659,15 +1660,17 @@ public static class DisplayFusionFunction
             public void Dispose() { }
         }
 
-        // 2. Modified TimedOperation factory method
+        // TimedOperation factory method
+        // usage: using ( Log.T() ) { code(); }
         public static IDisposable T(string operationName,
                                     LogLevel logLevel = LogLevel.Debug,
                                     bool showMessageBox = false,
+                                    bool disableStartLog = false,
                                     [CallerMemberName] string memberName = "",
                                     [CallerLineNumber] int lineNumber = 0)
         {
             return (int)logLevel <= (int)MinimumLogLevel
-                ? new TimedOperation(operationName, logLevel, showMessageBox, memberName, lineNumber)
+                ? new TimedOperation(operationName, logLevel, showMessageBox, disableStartLog, memberName, lineNumber)
                 : NullDisposable.Instance;
         }
 
@@ -1684,6 +1687,7 @@ public static class DisplayFusionFunction
             public TimedOperation(string operationName,
                                 LogLevel logLevel = LogLevel.Debug,
                                 bool showMessageBox = false,
+                                bool disableStartLog = false,
                                 [CallerMemberName] string memberName = "",
                                 [CallerLineNumber] int lineNumber = 0)
             {
@@ -1693,9 +1697,13 @@ public static class DisplayFusionFunction
                 _operationName = operationName;
                 _logLevel = logLevel;
                 _showMessageBox = showMessageBox;
-                _sw = Stopwatch.StartNew();
                 _memberName = memberName;
                 _lineNumber = lineNumber;
+
+                if (DisplayFusionFunction.enableLogStartTimer && !disableStartLog)
+                    UseLogger($"STARTED '{_operationName}'");
+
+                _sw = Stopwatch.StartNew();
             }
 
             public void Dispose()
@@ -1703,9 +1711,14 @@ public static class DisplayFusionFunction
                 if (!_isEnabled) return;
 
                 _sw.Stop();
+                UseLogger($"TIME of '{_operationName}': {_sw.Elapsed.TotalMilliseconds:0.00} ms");
+            }
+
+            private void UseLogger(string message)
+            {
                 Log.LogInternal(
                     _logLevel,
-                    $"TIME of '{_operationName}': {_sw.Elapsed.TotalMilliseconds:0.00} ms",
+                    message,
                     variables: null,
                     showMessageBox: _showMessageBox,
                     skipHeader: false,
