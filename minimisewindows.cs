@@ -93,12 +93,12 @@ public static class DisplayFusionFunction
 
     public static void Run(IntPtr windowHandle)
     {
-        using (new Log.TimedOperation("whole program", Log.LogLevel.Info))
+        using (Log.T("whole program", Log.LogLevel.Info))
         {
-            using (new Log.TimedOperation("Initialization")) { Init(); }
+            using (Log.T("Initialization")) { Init(); }
 
             IntPtr[] windowsToHide;
-            using (new Log.TimedOperation("GetListOfWindowsToHide")) { windowsToHide = GetListOfWindowsToHide(GetOledMonitorID()); }
+            using (Log.T("GetListOfWindowsToHide")) { windowsToHide = GetListOfWindowsToHide(GetOledMonitorID()); }
 
             bool windowsToHidePresent = windowsToHide.Length > 0;
             bool windowsWereMinimized = WereWindowsMinimized();
@@ -117,14 +117,14 @@ public static class DisplayFusionFunction
             if (IsForceReviveRequested())
             {
                 if (debugPrintDecideMinRevive) MessageBox.Show($"Force revive\n\n{debugInfo}");
-                using (new Log.TimedOperation("Forced HandleReviving")) { HandleReviving(false); }
+                using (Log.T("Forced HandleReviving")) { HandleReviving(false); }
             }
             else // no forceRevive
             {
                 if (windowsToHidePresent && !windowsWereHiddenCurrentMode)
                 {
                     if (debugPrintDecideMinRevive) MessageBox.Show($"PRESENT to hide and NOT hidden\n\n{debugInfo}");
-                    using (new Log.TimedOperation("HandleHiding present windows")) { HandleHiding(windowsToHide); }
+                    using (Log.T("HandleHiding present windows")) { HandleHiding(windowsToHide); }
                 }
                 else if (windowsToHidePresent && windowsWereHiddenCurrentMode)
                 {
@@ -132,20 +132,20 @@ public static class DisplayFusionFunction
                     {
                         if (debugPrintDecideMinRevive) MessageBox.Show($"PRESENT to hide and WERE hidden (prio hide)\n\n{debugInfo}");
                         // ignore saved windows and hide visible ones
-                        using (new Log.TimedOperation("HandleHiding PrioritizeHiding")) { HandleHiding(windowsToHide); }
+                        using (Log.T("HandleHiding PrioritizeHiding")) { HandleHiding(windowsToHide); }
                     }
                     else
                     {
                         if (debugPrintDecideMinRevive) MessageBox.Show($"PRESENT to hide and WERE hidden (NO prio hide)\n\n{debugInfo}");
                         // ignore visible windows and revive saved ones
-                        using (new Log.TimedOperation("HandleReviving with no PrioritizeHiding")) { HandleReviving(false); }
+                        using (Log.T("HandleReviving with no PrioritizeHiding")) { HandleReviving(false); }
                     }
                 }
                 else if (!windowsToHidePresent && windowsWereHiddenCurrentMode)
                 {
                     if (debugPrintDecideMinRevive) MessageBox.Show($"NOTHING to hide and WERE hidden\n\n{debugInfo}");
                     // revive saved windows only
-                    using (new Log.TimedOperation("HandleReviving saved windows")) { HandleReviving(false); }
+                    using (Log.T("HandleReviving saved windows")) { HandleReviving(false); }
                 }
                 else if (!windowsToHidePresent && !windowsWereHiddenCurrentMode)
                 {
@@ -1653,7 +1653,25 @@ public static class DisplayFusionFunction
             { LogLevel.Debug, false }
         };
 
-        public class TimedOperation : IDisposable
+        private class NullDisposable : IDisposable
+        {
+            public static readonly NullDisposable Instance = new();
+            public void Dispose() { }
+        }
+
+        // 2. Modified TimedOperation factory method
+        public static IDisposable T(string operationName,
+                                    LogLevel logLevel = LogLevel.Debug,
+                                    bool showMessageBox = false,
+                                    [CallerMemberName] string memberName = "",
+                                    [CallerLineNumber] int lineNumber = 0)
+        {
+            return (int)logLevel <= (int)MinimumLogLevel
+                ? new TimedOperation(operationName, logLevel, showMessageBox, memberName, lineNumber)
+                : NullDisposable.Instance;
+        }
+
+        private class TimedOperation : IDisposable
         {
             private readonly string _operationName;
             private readonly string _memberName;
@@ -1702,7 +1720,7 @@ public static class DisplayFusionFunction
             try
             {
                 string date = DateTime.Now.ToString("yyyy-MM-dd");
-                string logDir = Path.Combine(LOG_DIRECTORY, date);
+                string logDir = singleLogMode ? LOG_DIRECTORY : Path.Combine(LOG_DIRECTORY, date);
                 Directory.CreateDirectory(logDir);
                 string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
                 string filename = singleLogMode ? "log.txt" : $"{FILENAME_PREFIX}{timestamp}.txt";
