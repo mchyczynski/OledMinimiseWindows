@@ -93,73 +93,76 @@ public static class DisplayFusionFunction
 
     public static void Run(IntPtr windowHandle)
     {
-        using (new Log.TimedOperation("Initialization"))
-        { Init(); }
-
-        IntPtr[] windowsToHide;
-        using (new Log.TimedOperation("GetListOfWindowsToHide"))
-        { windowsToHide = GetListOfWindowsToHide(GetOledMonitorID()); }
-
-        bool windowsToHidePresent = windowsToHide.Length > 0;
-        bool windowsWereMinimized = WereWindowsMinimized();
-        bool windowsWereSwept = WereWindowsSwept();
-        bool windowsWereHiddenCurrentMode = (!IsSweepModeRequested() && windowsWereMinimized) ||
-                                            (IsSweepModeRequested() && windowsWereSwept);
-
-        string debugInfo = $"IsForceReviveRequested: {IsForceReviveRequested()}\n" +
-                           $"IsFocusModeRequested: {IsFocusModeRequested()}\n" +
-                           $"IsSweepModeRequested: {IsSweepModeRequested()}\n\n" +
-                           $"windowsToHidePresent: {windowsToHidePresent}\n" +
-                           $"windowsWereMinimized: {windowsWereMinimized}\n" +
-                           $"windowsWereSwept: {windowsWereSwept}\n\n" +
-                           $"windowsWereHiddenCurrentMode: {windowsWereHiddenCurrentMode}";
-
-        if (IsForceReviveRequested())
+        using (new Log.TimedOperation("whole program", Log.LogLevel.Info))
         {
-            if (debugPrintDecideMinRevive) MessageBox.Show($"Force revive\n\n{debugInfo}");
-            using (new Log.TimedOperation("Forced HandleReviving"))
-            { HandleReviving(false); }
-        }
-        else // no forceRevive
-        {
-            if (windowsToHidePresent && !windowsWereHiddenCurrentMode)
+            using (new Log.TimedOperation("Initialization")) { Init(); }
+
+            IntPtr[] windowsToHide;
+            using (new Log.TimedOperation("GetListOfWindowsToHide")) { windowsToHide = GetListOfWindowsToHide(GetOledMonitorID()); }
+
+            bool windowsToHidePresent = windowsToHide.Length > 0;
+            bool windowsWereMinimized = WereWindowsMinimized();
+            bool windowsWereSwept = WereWindowsSwept();
+            bool windowsWereHiddenCurrentMode = (!IsSweepModeRequested() && windowsWereMinimized) ||
+                                                (IsSweepModeRequested() && windowsWereSwept);
+
+            string debugInfo = $"IsForceReviveRequested: {IsForceReviveRequested()}\n" +
+                               $"IsFocusModeRequested: {IsFocusModeRequested()}\n" +
+                               $"IsSweepModeRequested: {IsSweepModeRequested()}\n\n" +
+                               $"windowsToHidePresent: {windowsToHidePresent}\n" +
+                               $"windowsWereMinimized: {windowsWereMinimized}\n" +
+                               $"windowsWereSwept: {windowsWereSwept}\n\n" +
+                               $"windowsWereHiddenCurrentMode: {windowsWereHiddenCurrentMode}";
+
+            if (IsForceReviveRequested())
             {
-                if (debugPrintDecideMinRevive) MessageBox.Show($"NOTHING to hide and NOT hidden\n\n{debugInfo}");
-                HandleHiding(windowsToHide);
+                if (debugPrintDecideMinRevive) MessageBox.Show($"Force revive\n\n{debugInfo}");
+                using (new Log.TimedOperation("Forced HandleReviving")) { HandleReviving(false); }
             }
-            else if (windowsToHidePresent && windowsWereHiddenCurrentMode)
+            else // no forceRevive
             {
-                if (ShouldPrioritizeHiding())
+                if (windowsToHidePresent && !windowsWereHiddenCurrentMode)
                 {
-                    if (debugPrintDecideMinRevive) MessageBox.Show($"PRESENT to hide and WERE hidden (prio hide)\n\n{debugInfo}");
-                    HandleHiding(windowsToHide); // ignore saved windows and hide visible ones
+                    if (debugPrintDecideMinRevive) MessageBox.Show($"PRESENT to hide and NOT hidden\n\n{debugInfo}");
+                    using (new Log.TimedOperation("HandleHiding present windows")) { HandleHiding(windowsToHide); }
+                }
+                else if (windowsToHidePresent && windowsWereHiddenCurrentMode)
+                {
+                    if (ShouldPrioritizeHiding())
+                    {
+                        if (debugPrintDecideMinRevive) MessageBox.Show($"PRESENT to hide and WERE hidden (prio hide)\n\n{debugInfo}");
+                        // ignore saved windows and hide visible ones
+                        using (new Log.TimedOperation("HandleHiding PrioritizeHiding")) { HandleHiding(windowsToHide); }
+                    }
+                    else
+                    {
+                        if (debugPrintDecideMinRevive) MessageBox.Show($"PRESENT to hide and WERE hidden (NO prio hide)\n\n{debugInfo}");
+                        // ignore visible windows and revive saved ones
+                        using (new Log.TimedOperation("HandleReviving with no PrioritizeHiding")) { HandleReviving(false); }
+                    }
+                }
+                else if (!windowsToHidePresent && windowsWereHiddenCurrentMode)
+                {
+                    if (debugPrintDecideMinRevive) MessageBox.Show($"NOTHING to hide and WERE hidden\n\n{debugInfo}");
+                    // revive saved windows only
+                    using (new Log.TimedOperation("HandleReviving saved windows")) { HandleReviving(false); }
+                }
+                else if (!windowsToHidePresent && !windowsWereHiddenCurrentMode)
+                {
+                    if (debugPrintDecideMinRevive) MessageBox.Show($"NOTHING to hide and NOT hidden\n\nDoing Nothing!\n\n{debugInfo}");
+                    // HandleReviving(true); // todo force revive all windows or do nothing?
                 }
                 else
                 {
-                    if (debugPrintDecideMinRevive) MessageBox.Show($"PRESENT to hide and WERE hidden (NO prio hide)\n\n{debugInfo}");
-                    HandleReviving(false); // ignore visible windows and revive saved ones
+                    MessageBox.Show($"ERROR <min> else state not expected!");
                 }
             }
-            else if (!windowsToHidePresent && windowsWereHiddenCurrentMode)
-            {
-                if (debugPrintDecideMinRevive) MessageBox.Show($"NOTHING to hide and WERE hidden\n\n{debugInfo}");
-                HandleReviving(false); // revive saved windows only
-            }
-            else if (!windowsToHidePresent && !windowsWereHiddenCurrentMode)
-            {
-                if (debugPrintDecideMinRevive) MessageBox.Show($"NOTHING to hide and NOT hidden\n\nDoing Nothing!\n\n{debugInfo}");
-                // HandleReviving(true); // todo force revive all windows or do nothing?
-            }
-            else
-            {
-                MessageBox.Show($"ERROR <min> else state not expected!");
-            }
-        }
 
-        if (debugPrintListOfWindows) MessageBox.Show($"END\n\nlistofwindowsto unsweep:\n\n{listOfWindowsToUnsweepStr}\n\n" +
-                                                    $"listofwindowsto hide:\n\n{listOfWindowsToHideStr}");
+            if (debugPrintListOfWindows) MessageBox.Show($"END\n\nlistofwindowsto unsweep:\n\n{listOfWindowsToUnsweepStr}\n\n" +
+                                                        $"listofwindowsto hide:\n\n{listOfWindowsToHideStr}");
 
-        Log.D("END", new { listOfWindowsToUnsweepStr, listOfWindowsToHideStr, focusmode = IsFocusModeRequested() });
+            Log.D("END", new { listOfWindowsToUnsweepStr, listOfWindowsToHideStr, focusmode = IsFocusModeRequested() });
+        } // timed operation TOTAL
     }
 
     private static bool WereWindowsMinimized()
@@ -1684,7 +1687,7 @@ public static class DisplayFusionFunction
                 _sw.Stop();
                 Log.LogInternal(
                     _logLevel,
-                    $"Operation '{_operationName}' completed in {_sw.Elapsed.TotalMilliseconds:0.00} ms",
+                    $"TIME of '{_operationName}': {_sw.Elapsed.TotalMilliseconds:0.00} ms",
                     variables: null,
                     showMessageBox: _showMessageBox,
                     skipHeader: false,
@@ -1704,6 +1707,7 @@ public static class DisplayFusionFunction
                 string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
                 string filename = singleLogMode ? "log.txt" : $"{FILENAME_PREFIX}{timestamp}.txt";
                 LogFilePath = Path.Combine(logDir, filename);
+
                 File.WriteAllText(LogFilePath, $"Application Log - {DateTime.Now}\n\n");
 
                 StartFlushThread();
@@ -1826,7 +1830,7 @@ public static class DisplayFusionFunction
             string formattedMessage = $"{message}";
             if (!skipHeader)
             {
-                formattedMessage = $"{memberName}():{lineNumber}> {message}";
+                formattedMessage = $"{memberName}():{lineNumber} {message}";
             }
             string fullMessage = BuildMessageWithVariables(formattedMessage, variables);
             WriteLog(level, fullMessage, showMessageBox, skipHeader);
