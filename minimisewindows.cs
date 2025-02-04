@@ -1611,6 +1611,7 @@ public static class DisplayFusionFunction
 
     public static class Log
     {
+        private const bool singleLogMode = true;
         private const int BUFFER_FLUSH_SIZE = 100;
         private const int BUFFER_FLUSH_MS = 2000;
         private const int BUFFER_CAPACITY = 200;
@@ -1653,7 +1654,8 @@ public static class DisplayFusionFunction
                 string logDir = Path.Combine(LOG_DIRECTORY, date);
                 Directory.CreateDirectory(logDir);
                 string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
-                LogFilePath = Path.Combine(logDir, $"{FILENAME_PREFIX}{timestamp}.txt");
+                string filename = singleLogMode ? "log.txt" : $"{FILENAME_PREFIX}{timestamp}.txt";
+                LogFilePath = Path.Combine(logDir, filename);
                 File.WriteAllText(LogFilePath, $"Application Log - {DateTime.Now}\n\n");
 
                 StartFlushThread();
