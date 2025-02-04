@@ -20,6 +20,7 @@ using System.Runtime.CompilerServices;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Diagnostics;
 
 public static class DisplayFusionFunction
 {
@@ -79,7 +80,6 @@ public static class DisplayFusionFunction
 
     private static OrderedDictionary unsweepWindowsInfoMap = new();
 
-
     private static List<string> classnameBlacklist = new List<string> {"DFTaskbar", "DFTitleBarWindow", "Shell_TrayWnd",
                                                                        "tooltips", "Shell_InputSwitchTopLevelWindow",
                                                                        "Windows.UI.Core.CoreWindow", "Progman", "SizeTipClass",
@@ -93,9 +93,12 @@ public static class DisplayFusionFunction
 
     public static void Run(IntPtr windowHandle)
     {
-        Init();
+        using (new Log.TimedOperation("Initialization"))
+        { Init(); }
 
-        IntPtr[] windowsToHide = GetListOfWindowsToHide(GetOledMonitorID());
+        IntPtr[] windowsToHide;
+        using (new Log.TimedOperation("GetListOfWindowsToHide", showMessageBox: true))
+        { windowsToHide = GetListOfWindowsToHide(GetOledMonitorID()); }
 
         bool windowsToHidePresent = windowsToHide.Length > 0;
         bool windowsWereMinimized = WereWindowsMinimized();
@@ -114,7 +117,8 @@ public static class DisplayFusionFunction
         if (IsForceReviveRequested())
         {
             if (debugPrintDecideMinRevive) MessageBox.Show($"Force revive\n\n{debugInfo}");
-            HandleReviving(false);
+            using (new Log.TimedOperation("Forced HandleReviving"))
+            { HandleReviving(false); }
         }
         else // no forceRevive
         {
@@ -1639,12 +1643,50 @@ public static class DisplayFusionFunction
         public static LogLevel MinimumLogLevel { get; set; } = LogLevel.Debug;
 
         private static Dictionary<LogLevel, bool> _messageBoxDefaults = new Dictionary<LogLevel, bool>
-      {
-         { LogLevel.Error, true },
-         { LogLevel.Warning, true },
-         { LogLevel.Info, false },
-         { LogLevel.Debug, false }
-      };
+        {
+            { LogLevel.Error, true },
+            { LogLevel.Warning, true },
+            { LogLevel.Info, false },
+            { LogLevel.Debug, false }
+        };
+
+        public class TimedOperation : IDisposable
+        {
+            private readonly string _operationName;
+            private readonly string _memberName;
+            private readonly int _lineNumber;
+            private readonly LogLevel _logLevel;
+            private readonly Stopwatch _sw;
+            private readonly bool _showMessageBox;
+
+            public TimedOperation(string operationName,
+                                LogLevel logLevel = LogLevel.Debug,
+                                bool showMessageBox = false,
+                                [CallerMemberName] string memberName = "",
+                                [CallerLineNumber] int lineNumber = 0)
+            {
+                _operationName = operationName;
+                _logLevel = logLevel;
+                _showMessageBox = showMessageBox;
+                _sw = Stopwatch.StartNew();
+                _memberName = memberName;
+                _lineNumber = lineNumber;
+            }
+
+            public void Dispose()
+            {
+                _sw.Stop();
+                Log.LogInternal(
+                    _logLevel,
+                    $"Operation '{_operationName}' completed in {_sw.Elapsed.TotalMilliseconds:0.00} ms",
+                    variables: null,
+                    showMessageBox: _showMessageBox,
+                    skipHeader: false,
+                    memberName: _memberName,
+                    lineNumber: _lineNumber
+                );
+            }
+        } // TimedOperation
 
         static Log()
         {
