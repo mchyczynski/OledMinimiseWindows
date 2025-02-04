@@ -97,7 +97,7 @@ public static class DisplayFusionFunction
         { Init(); }
 
         IntPtr[] windowsToHide;
-        using (new Log.TimedOperation("GetListOfWindowsToHide", showMessageBox: true))
+        using (new Log.TimedOperation("GetListOfWindowsToHide"))
         { windowsToHide = GetListOfWindowsToHide(GetOledMonitorID()); }
 
         bool windowsToHidePresent = windowsToHide.Length > 0;
@@ -1658,6 +1658,7 @@ public static class DisplayFusionFunction
             private readonly LogLevel _logLevel;
             private readonly Stopwatch _sw;
             private readonly bool _showMessageBox;
+            private readonly bool _isEnabled;
 
             public TimedOperation(string operationName,
                                 LogLevel logLevel = LogLevel.Debug,
@@ -1665,6 +1666,9 @@ public static class DisplayFusionFunction
                                 [CallerMemberName] string memberName = "",
                                 [CallerLineNumber] int lineNumber = 0)
             {
+                _isEnabled = (int)logLevel <= (int)Log.MinimumLogLevel;
+                if (!_isEnabled) return;
+
                 _operationName = operationName;
                 _logLevel = logLevel;
                 _showMessageBox = showMessageBox;
@@ -1675,6 +1679,8 @@ public static class DisplayFusionFunction
 
             public void Dispose()
             {
+                if (!_isEnabled) return;
+
                 _sw.Stop();
                 Log.LogInternal(
                     _logLevel,
