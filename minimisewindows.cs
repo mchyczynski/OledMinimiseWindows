@@ -1690,7 +1690,15 @@ public static class DisplayFusionFunction
                 if (!_isEnabled) return;
 
                 _sw.Stop();
-                UseLogger($"TIME of '{_operationName}': {_sw.Elapsed.TotalMilliseconds:0.00} ms");
+
+                var elapsed = _sw.Elapsed;
+                var formattedTime = elapsed.TotalMilliseconds < 1000
+                    ? $"{elapsed.TotalMilliseconds:0.0000} ms"
+                    : elapsed.TotalMilliseconds < 60000
+                    ? elapsed.ToString(@"ss\.ff") + " s"
+                    : elapsed.ToString(@"hh\:mm\:ss\.f");
+
+                UseLogger($"TIME of '{_operationName}': {formattedTime}");
             }
 
             private void UseLogger(string message)
