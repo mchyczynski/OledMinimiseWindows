@@ -1990,6 +1990,7 @@ public static class DisplayFusionFunction
             {
                 string s => $"\"{s}\"",
                 DateTime dt => dt.ToString("yyyy-MM-dd HH:mm:ss"),
+                IDictionary dict => SerializeDictionary(dict, depth),
                 IEnumerable enumerable => SerializeCollection(enumerable, depth),
                 IntPtr ptr => $"0x{ptr.ToString()}",
                 _ => $"{obj.ToString()}"
@@ -2010,6 +2011,21 @@ public static class DisplayFusionFunction
             if (sb.Length > 1) sb.Length -= 2; // remove last comma and space
             sb.Append($"] ({count})");
 
+            return sb.ToString();
+        }
+
+        private static string SerializeDictionary(IDictionary dictionary, int depth)
+        {
+            var sb = new StringBuilder("{");
+            int count = 0;
+
+            foreach (DictionaryEntry entry in dictionary)
+            {
+                sb.Append($"{SerializeObject(entry.Key)}: {SerializeObject(entry.Value)}, ");
+                count++;
+            }
+            if (sb.Length > 1) sb.Length -= 2; // remove last comma and space
+            sb.Append($"}} ({count})");
             return sb.ToString();
         }
 
