@@ -107,63 +107,51 @@ public static class DisplayFusionFunction
             bool windowsWereHiddenCurrentMode = (!IsSweepModeRequested() && windowsWereMinimized) ||
                                                 (IsSweepModeRequested() && windowsWereSwept);
 
-            string debugInfo = $"IsForceReviveRequested: {IsForceReviveRequested()}\n" +
-                               $"IsFocusModeRequested: {IsFocusModeRequested()}\n" +
-                               $"IsSweepModeRequested: {IsSweepModeRequested()}\n\n" +
-                               $"windowsToHidePresent: {windowsToHidePresent}\n" +
-                               $"windowsWereMinimized: {windowsWereMinimized}\n" +
-                               $"windowsWereSwept: {windowsWereSwept}\n\n" +
-                               $"windowsWereHiddenCurrentMode: {windowsWereHiddenCurrentMode}";
+            Log.D("Initial state", new { windowsToHide, windowsToHidePresent, windowsWereMinimized, windowsWereSwept, windowsWereHiddenCurrentMode });
 
             if (IsForceReviveRequested())
             {
-                if (debugPrintDecideMinRevive) MessageBox.Show($"Force revive\n\n{debugInfo}");
-                using (Log.T("Forced HandleReviving")) { HandleReviving(false); }
+                using (Log.T("Forced HandleReviving", startLog: true)) { HandleReviving(false); }
             }
             else // no forceRevive
             {
                 if (windowsToHidePresent && !windowsWereHiddenCurrentMode)
                 {
-                    if (debugPrintDecideMinRevive) MessageBox.Show($"PRESENT to hide and NOT hidden\n\n{debugInfo}");
-                    using (Log.T("HandleHiding present windows")) { HandleHiding(windowsToHide); }
+                    using (Log.T("HandleHiding present windows", startLog: true)) { HandleHiding(windowsToHide); }
                 }
                 else if (windowsToHidePresent && windowsWereHiddenCurrentMode)
                 {
                     if (ShouldPrioritizeHiding())
                     {
-                        if (debugPrintDecideMinRevive) MessageBox.Show($"PRESENT to hide and WERE hidden (prio hide)\n\n{debugInfo}");
                         // ignore saved windows and hide visible ones
-                        using (Log.T("HandleHiding PrioritizeHiding")) { HandleHiding(windowsToHide); }
+                        using (Log.T("HandleHiding PrioritizeHiding", startLog: true)) { HandleHiding(windowsToHide); }
                     }
                     else
                     {
-                        if (debugPrintDecideMinRevive) MessageBox.Show($"PRESENT to hide and WERE hidden (NO prio hide)\n\n{debugInfo}");
                         // ignore visible windows and revive saved ones
-                        using (Log.T("HandleReviving with no PrioritizeHiding")) { HandleReviving(false); }
+                        using (Log.T("HandleReviving with no PrioritizeHiding", startLog: true)) { HandleReviving(false); }
                     }
                 }
                 else if (!windowsToHidePresent && windowsWereHiddenCurrentMode)
                 {
-                    if (debugPrintDecideMinRevive) MessageBox.Show($"NOTHING to hide and WERE hidden\n\n{debugInfo}");
                     // revive saved windows only
-                    using (Log.T("HandleReviving saved windows")) { HandleReviving(false); }
+                    using (Log.T("HandleReviving saved windows", startLog: true)) { HandleReviving(false); }
                 }
                 else if (!windowsToHidePresent && !windowsWereHiddenCurrentMode)
                 {
-                    if (debugPrintDecideMinRevive) MessageBox.Show($"NOTHING to hide and NOT hidden\n\nDoing Nothing!\n\n{debugInfo}");
+                    Log.D("NOTHING to hide and NOT hidden. Doing Nothing!");
                     // HandleReviving(true); // todo force revive all windows or do nothing?
                 }
                 else
                 {
-                    MessageBox.Show($"ERROR <min> else state not expected!");
+                    Log.E("else state not expected!", showMessageBox: true);
                 }
             }
 
-            if (debugPrintListOfWindows) MessageBox.Show($"END\n\nlistofwindowsto unsweep:\n\n{listOfWindowsToUnsweepStr}\n\n" +
-                                                        $"listofwindowsto hide:\n\n{listOfWindowsToHideStr}");
+            Log.D("program finished", new { listOfWindowsToUnsweepStr, listOfWindowsToHideStr });
+        } // timed operation whole program
 
-            Log.D("END", new { listOfWindowsToUnsweepStr, listOfWindowsToHideStr, focusmode = IsFocusModeRequested() });
-        } // timed operation TOTAL
+        // todo Logger.Warnings / Errors present message box
     }
 
     private static bool WereWindowsMinimized()
@@ -180,8 +168,6 @@ public static class DisplayFusionFunction
 
     public static void HandleHiding(IntPtr[] windowsToHide)
     {
-        if (debugPrintStartStop) MessageBox.Show("start HIDE");
-
         int count = 0;
         if (IsSweepModeRequested())
         {
@@ -206,7 +192,7 @@ public static class DisplayFusionFunction
         foreach (IntPtr windowHandle in windowsToMinimize)
         {
             if (DetectedInvalidWindow(windowHandle, "MinimizeWindows", $"minimizedWindowsCount: {minimizedWindowsCount}")) continue;
-            if (debugPrintHideRevive) MessageBox.Show($"minimizing window {BFS.Window.GetText(windowHandle)}");
+            Log.I($"minimizing window {BFS.Window.GetText(windowHandle)}");
 
             WindowUtils.MinimizeWindow(windowHandle);
             minimizedWindowsCount += 1;
@@ -226,7 +212,7 @@ public static class DisplayFusionFunction
         // save the list of windows that were minimized
         BFS.ScriptSettings.WriteValue(MinimizedWindowsListSetting, minimizedWindowsSaveList);
 
-        if (debugPrintStartStop) MessageBox.Show($"finished MIN (minimized {minimizedWindowsCount}/{windowsToMinimize.Length} windows)");
+        Log.I($"finished MIN (minimized {minimizedWindowsCount}/{windowsToMinimize.Length} windows)");
 
         return minimizedWindowsCount;
     }
@@ -954,9 +940,10 @@ public static class DisplayFusionFunction
     public static void Init()
     {
         Log.I($"\n\n================================================================================\n" +
-              $"\t\t\tInitializing OLED minimizer - {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n" +
+              $"\t\t\t\t OLED minimizer - {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n" +
               $"================================================================================",
               skipHeader: true);
+        Log.D("Initializing");
         CacheAll();
 
         Log.D("Clearing variables");
@@ -1028,25 +1015,17 @@ public static class DisplayFusionFunction
         {
             if (IsWindowBlacklisted(windowHandle))
             {
-                if (debugWindowFiltering) MessageBox.Show($"W ignored blacklisted:\n\n|{BFS.Window.GetText(windowHandle)}|\n\n|{BFS.Window.GetClass(windowHandle)}|");
+                Log.D($"Window ignored blacklisted", () => new { text = BFS.Window.GetText(windowHandle), classname = BFS.Window.GetClass(windowHandle) });
                 return false;
-            }
-            else
-            {
-                if (debugWindowFiltering) MessageBox.Show($"W NOT ignored blacklisted:\n\n|{BFS.Window.GetText(windowHandle)}|\n\n|{BFS.Window.GetClass(windowHandle)}|");
             }
 
             if (BFS.Window.IsMinimized(windowHandle))
             {
-                if (debugWindowFiltering) MessageBox.Show($"W ignored minimized:\n\n|{BFS.Window.GetText(windowHandle)}|\n\n|{BFS.Window.GetClass(windowHandle)}|");
+                Log.D($"Window ignored minimized", () => new { text = BFS.Window.GetText(windowHandle), classname = BFS.Window.GetClass(windowHandle) });
                 return false;
             }
-            else
-            {
-                if (debugWindowFiltering) MessageBox.Show($"W NOT ignored minimized:\n\n|{BFS.Window.GetText(windowHandle)}|\n\n|{BFS.Window.GetClass(windowHandle)}|");
-            }
 
-            if (debugWindowFiltering) MessageBox.Show($"W NOT ignored at all:\n\n|{BFS.Window.GetText(windowHandle)}|\n\n|{BFS.Window.GetClass(windowHandle)}|");
+            Log.I($"Window NOT ignored at all", () => new { text = BFS.Window.GetText(windowHandle), classname = BFS.Window.GetClass(windowHandle) });
             return true;
         }).ToArray();
     }
@@ -1109,8 +1088,8 @@ public static class DisplayFusionFunction
         // ignore window handles that no longer exists
         if (!WindowUtils.IsWindowValid(windowHandle))
         {
-            MessageBox.Show($"ignoring not valid window: {windowHandle}\n\n|{BFS.Window.GetText(windowHandle)}|\n\n|{BFS.Window.GetClass(windowHandle)}|");
-            return true; // todo comment out print
+            Log.W($"ignoring not valid window", () => new { windowHandle, text = BFS.Window.GetText(windowHandle), classname = BFS.Window.GetClass(windowHandle) });
+            return true;
         }
 
         // ignore windows based on classname blacklist
@@ -1119,7 +1098,7 @@ public static class DisplayFusionFunction
               {
                   if (classname.StartsWith(blacklistItem, StringComparison.Ordinal))
                   {
-                      if (debugWindowFiltering) MessageBox.Show($"Ignored bacause of class: {classname}|{blacklistItem}");
+                      Log.D($"Ignored bacause of class", new { classname, blacklistItem });
                       return true;
                   }
                   return false;
@@ -1133,7 +1112,7 @@ public static class DisplayFusionFunction
         string text = BFS.Window.GetText(windowHandle);
         if (string.IsNullOrEmpty(text))
         {
-            if (debugWindowFiltering) MessageBox.Show($"Ignored bacause of empty text (classname: {classname})");
+            Log.D($"Ignored bacause of empty text", new { classname });
             return true;
         }
 
@@ -1142,7 +1121,7 @@ public static class DisplayFusionFunction
               {
                   if (text.Equals(blacklistItem, StringComparison.Ordinal))
                   {
-                      if (debugWindowFiltering) MessageBox.Show($"Ignored bacause of text: {text}|{blacklistItem}|");
+                      Log.D($"Ignored bacause of text", new { text, blacklistItem });
                       return true;
                   }
                   return false;
@@ -1156,7 +1135,7 @@ public static class DisplayFusionFunction
         Rectangle windowRect = WindowUtils.GetBounds(windowHandle);
         if (windowRect.Width <= 0 || windowRect.Height <= 0)
         {
-            if (debugWindowFiltering) MessageBox.Show($"Filtered out windows wrong size (w{windowRect.Width}, h{windowRect.Height}). classname: {classname}, text: {text})");
+            Log.W($"Ignored bacause of wrong size", new { bounds = windowRect, classname, text });
             return true;
         }
 
@@ -1185,7 +1164,7 @@ public static class DisplayFusionFunction
 
     public static int ClipBottom(int val)
     {
-        if (val < 0) MessageBox.Show($"WARN <min> Clipping bottom: {val}");
+        Log.W($"clipping bottom: {val}", condition: () => (val < 0));
         return val < 0 ? 0 : val;
     }
 
@@ -1213,7 +1192,7 @@ public static class DisplayFusionFunction
             return ((Rectangle, bool))unsweepWindowsInfoMap[windowHandle]!;
         }
 
-        MessageBox.Show("ERROR <min>! GetSavedWindowInfo: window handle {windowHandle} not found in the map");
+        Log.E($"window handle {windowHandle} not found in the map", new { unsweepWindowsInfoMap });
 
         return (new Rectangle { }, false);
     }
