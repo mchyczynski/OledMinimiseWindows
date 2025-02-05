@@ -1608,7 +1608,9 @@ public static class DisplayFusionFunction
         private static Task _flushTask;
         private static readonly ConcurrentDictionary<Type, PropertyInfo[]> _propertyCache = new();
         private static readonly object _lock = new object();
+        private static readonly object _emergencyLock = new object();
         private static readonly object _configLock = new object();
+        private static DateTime _lastOverflowWarning = DateTime.MinValue;
         private static readonly string LogFilePath;
         private const string LOG_DIRECTORY = @"C:\Users\mikolaj\Documents\MinimizerLogs";
         private const string FILENAME_PREFIX = "Log_";
@@ -1640,7 +1642,7 @@ public static class DisplayFusionFunction
         }
 
         // TimedOperation factory method
-        // usage: using ( Log.T() ) { code(); }
+        // usage: using ( Log.T("text") ) { code(); }
         public static IDisposable T(string operationName,
                                     LogLevel logLevel = LogLevel.Debug,
                                     bool showMessageBox = false,
@@ -1918,18 +1920,11 @@ public static class DisplayFusionFunction
                      $"{message}\n" :
                      $"{DateTime.Now:HH:mm:ss} [{level.ToShortString()}]\t{message}\n";
 
-                // add to log queue instead of direct write
-                if (!_logQueue.TryAdd(logEntry, 50))  // timeout 50ms
+                if (!_logQueue.TryAdd(logEntry, 50)) // timeout 50ms
                 {
-                    // emergency buffer clear when overflowing
-                    if (_logQueue.Count > BUFFER_CAPACITY * 2)
-                    {
-                        _logQueue.Dispose();
-                        StartFlushThread();
+                    HandleQueueOverflow();
                     }
-                }
 
-                // MessageBox stays sync
                 if (ShouldShowMessageBox(level, showMessageBox))
                 {
                     ShowMessage(level, message, skipHeader);
@@ -1937,13 +1932,71 @@ public static class DisplayFusionFunction
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Logging failed: {ex.Message}",
-                              "Log Error",
-                              MessageBoxButtons.OK,
-                              MessageBoxIcon.Error);
+                SafeEmergencyLog($"Critical logging failure: {ex.Message}");
             }
         }
 
+        private static void HandleQueueOverflow()
+        {
+            try
+            {
+                // limit frequency of log warnings to max 1 every 5 sec
+                if ((DateTime.Now - _lastOverflowWarning).TotalSeconds < 5) return;
+
+                // save info about overflow in safe emergency log
+                var errorMsg = "Log queue overflow! Some logs may be lost.";
+                SafeEmergencyLog(errorMsg);
+
+                // drain part of main queue
+                DrainQueuePartially();
+
+                _lastOverflowWarning = DateTime.Now;
+            }
+            catch
+            {
+                // final emergency fallback log
+                try { File.AppendAllText("emergency_fallback.log", $"{DateTime.Now:o} UNABLE TO LOG ERRORS\n"); }
+                catch { /* ignore */ }
+            }
+        }
+
+        private static void DrainQueuePartially()
+        {
+            lock (_emergencyLock)
+            {
+                // remove 25% oldest logs
+                int itemsToRemove = _logQueue.Count / 4;
+                for (int i = 0; i < itemsToRemove; i++)
+                {
+                    _logQueue.TryTake(out _);
+                }
+            }
+        }
+
+        private static void SafeEmergencyLog(string message)
+        {
+            lock (_emergencyLock)
+            {
+                try
+                {
+                    var tempPath = Path.Combine(LOG_DIRECTORY, "logs_temp.txt");
+                    File.AppendAllText(tempPath, $"{DateTime.Now:HH:mm:ss} [OVERFLOW_ERR]\t{message}\n");
+
+                    // rotate temp log file (>10MB)
+                    var fi = new FileInfo(tempPath);
+                    if (fi.Length > 10_000_000)
+                    {
+                        File.Move(tempPath, Path.Combine(LOG_DIRECTORY, $"logs_temp_old_{DateTime.Now:HHmmss}.txt"));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Final attempt to save logs in non standard location
+                    try { File.AppendAllText(@"C:\Windows\Temp\emergency.log", $"{DateTime.Now:o}|{ex.Message}\n"); }
+                    catch { /* Final ignore */ }
+        }
+            }
+        }
         private static bool ShouldShowMessageBox(LogLevel level, bool? showMessageBox)
         {
             lock (_configLock)
