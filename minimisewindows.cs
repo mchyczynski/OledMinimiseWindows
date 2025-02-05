@@ -1719,7 +1719,7 @@ public static class DisplayFusionFunction
                 Log.LogInternal(
                     _logLevel,
                     message,
-                    variables: null,
+                    variablesFactory: null,
                     showMessageBox: _showMessageBox,
                     skipHeader: false,
                     condition: () => true,
@@ -1826,7 +1826,16 @@ public static class DisplayFusionFunction
                             Func<bool> condition = null,
                                [CallerMemberName] string memberName = "",
                                [CallerLineNumber] int lineNumber = 0)
-               => LogInternal(LogLevel.Error, message, variables, showMessageBox, skipHeader, condition, memberName, lineNumber);
+               => LogInternal(LogLevel.Error, message, () => variables, showMessageBox, skipHeader, condition, memberName, lineNumber);
+
+        public static void E(string message,
+                            Func<object> variablesFactory,
+                            bool? showMessageBox = null,
+                            bool skipHeader = false,
+                            Func<bool> condition = null,
+                            [CallerMemberName] string memberName = "",
+                            [CallerLineNumber] int lineNumber = 0)
+               => LogInternal(LogLevel.Error, message, variablesFactory, showMessageBox, skipHeader, condition, memberName, lineNumber);
 
         public static void W(string message,
                             object variables = null,
@@ -1835,7 +1844,16 @@ public static class DisplayFusionFunction
                             Func<bool> condition = null,
                             [CallerMemberName] string memberName = "",
                             [CallerLineNumber] int lineNumber = 0)
-            => LogInternal(LogLevel.Warning, message, variables, showMessageBox, skipHeader, condition, memberName, lineNumber);
+            => LogInternal(LogLevel.Warning, message, () => variables, showMessageBox, skipHeader, condition, memberName, lineNumber);
+
+        public static void W(string message,
+                            Func<object> variablesFactory,
+                            bool? showMessageBox = null,
+                            bool skipHeader = false,
+                            Func<bool> condition = null,
+                            [CallerMemberName] string memberName = "",
+                            [CallerLineNumber] int lineNumber = 0)
+            => LogInternal(LogLevel.Warning, message, variablesFactory, showMessageBox, skipHeader, condition, memberName, lineNumber);
 
         public static void I(string message,
                             object variables = null,
@@ -1844,7 +1862,16 @@ public static class DisplayFusionFunction
                             Func<bool> condition = null,
                             [CallerMemberName] string memberName = "",
                             [CallerLineNumber] int lineNumber = 0)
-            => LogInternal(LogLevel.Info, message, variables, showMessageBox, skipHeader, condition, memberName, lineNumber);
+            => LogInternal(LogLevel.Info, message, () => variables, showMessageBox, skipHeader, condition, memberName, lineNumber);
+
+        public static void I(string message,
+                            Func<object> variablesFactory,
+                            bool? showMessageBox = null,
+                            bool skipHeader = false,
+                            Func<bool> condition = null,
+                            [CallerMemberName] string memberName = "",
+                            [CallerLineNumber] int lineNumber = 0)
+            => LogInternal(LogLevel.Info, message, variablesFactory, showMessageBox, skipHeader, condition, memberName, lineNumber);
 
         public static void D(string message,
                             object variables = null,
@@ -1853,11 +1880,20 @@ public static class DisplayFusionFunction
                             Func<bool> condition = null,
                             [CallerMemberName] string memberName = "",
                             [CallerLineNumber] int lineNumber = 0)
-            => LogInternal(LogLevel.Debug, message, variables, showMessageBox, skipHeader, condition, memberName, lineNumber);
+            => LogInternal(LogLevel.Debug, message, () => variables, showMessageBox, skipHeader, condition, memberName, lineNumber);
+
+        public static void D(string message,
+                            Func<object> variablesFactory,
+                            bool? showMessageBox = null,
+                            bool skipHeader = false,
+                            Func<bool> condition = null,
+                            [CallerMemberName] string memberName = "",
+                            [CallerLineNumber] int lineNumber = 0)
+            => LogInternal(LogLevel.Debug, message, variablesFactory, showMessageBox, skipHeader, condition, memberName, lineNumber);
 
         private static void LogInternal(LogLevel level,
                                        string message,
-                                       object variables,
+                                       Func<object> variablesFactory,
                                        bool? showMessageBox,
                                        bool skipHeader,
                                        Func<bool> condition,
@@ -1869,6 +1905,14 @@ public static class DisplayFusionFunction
 
             if (condition())
         {
+                if ((int)level > (int)MinimumLogLevel) return;
+
+                object variables = null;
+                if (variablesFactory != null)
+                {
+                    variables = variablesFactory(); // evaluate variables here
+                }
+
             string formattedMessage = $"{message}";
             if (!skipHeader)
             {
@@ -1883,8 +1927,6 @@ public static class DisplayFusionFunction
         {
             try
             {
-                if ((int)level > (int)MinimumLogLevel) return;
-
                 string logEntry = skipHeader ?
                      $"{message}\n" :
                      $"{DateTime.Now:HH:mm:ss} [{level.ToShortString()}]\t{message}\n";
