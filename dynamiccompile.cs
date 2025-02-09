@@ -41,38 +41,35 @@ public static class DisplayFusionFunction
             Assembly assembly = null;
             bool compileRequired = true;
 
-            lock (assemblyLock)
+
+            // Skip compilation if DLL exists and source file was not modified in meantime
+            DateTime sourceTime = File.GetLastWriteTime(scriptPath);
+            DateTime assemblyTime = File.Exists(assemblyPath) ? File.GetLastWriteTime(assemblyPath) : DateTime.MinValue;
+
+            if (assemblyTime >= sourceTime) compileRequired = false;
+
+            if (compileRequired)
             {
-                // Skip compilation if DLL exists and source file was not modified in meantime
-                if (File.Exists(assemblyPath))
+                // If context was loaded unload it before compiling new DLL
+                if (currentALC != null)
                 {
-                    DateTime sourceTime = File.GetLastWriteTime(scriptPath);
-                    DateTime assemblyTime = File.GetLastWriteTime(assemblyPath);
-                    if (assemblyTime >= sourceTime)
-                        compileRequired = false;
+                    currentALC.Unload();
+                    currentALC = null;
+                    cachedAssembly = null;
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
                 }
 
-                if (compileRequired)
-                {
-                    // If context was loaded unload it before compiling new DLL
-                    if (currentALC != null)
-                    {
-                        currentALC.Unload();
-                        currentALC = null;
-                        cachedAssembly = null;
-                        GC.Collect();
-                        GC.WaitForPendingFinalizers();
-                    }
 
+                var references = GetReferences();
+                if (!CompileAssembly(scriptPath, assemblyPath, compilerLogPath))
+                    return;
 
-                    var references = GetReferences();
-                    if (!CompileAssembly(scriptPath, assemblyPath, compilerLogPath))
-                        return;
+            } // End of compileRequired
+              // else MessageBox.Show($"Compilation skipped");
 
-                } // End of compileRequired
-                  // else MessageBox.Show($"Compilation skipped");
-
-
+            lock (assemblyLock)
+            {
                 // Use cached assembly if available and new wasn't just recompiled
                 if (!compileRequired && cachedAssembly != null)
                 {
@@ -90,13 +87,45 @@ public static class DisplayFusionFunction
                     // Cache newly loaded assembly
                     cachedAssembly = assembly;
                 }
+            }
 
+            // Find and invoke metod Run from dynamically compiled code
+            Type type = assembly.GetType("DisplayFusionFunction");
 
-                // Find and invoke metod Run from dynamically compiled code
-                Type type = assembly.GetType("DisplayFusionFunction");
-                MethodInfo method = type.GetMethod("Run", new[] { typeof(IntPtr) });
+            if (type == null)
+            {
+                string message = "Class 'DisplayFusionFunction' not found in compiled code.";
+                File.AppendAllText(compilerLogPath, message);
+                MessageBox.Show(message);
+                return;
+            }
+
+            MethodInfo method = type.GetMethod("Run", new[] { typeof(IntPtr) });
+            if (method == null)
+            {
+                string message = "Method 'Run()' not found in compiled code.";
+                File.AppendAllText(compilerLogPath, message);
+                MessageBox.Show(message);
+                return;
+            }
+
+            try
+            {
                 method.Invoke(null, new object[] { windowHandle });
             }
+            catch (TargetInvocationException tie)
+            {
+                string message = $"Error during starting compiled code:\n\n{tie.InnerException}";
+                File.AppendAllText(compilerLogPath, message);
+                MessageBox.Show(message);
+            }
+            catch (Exception ex)
+            {
+                string message = $"Unknown error during executing compiled code:\n\n{ex}";
+                File.AppendAllText(compilerLogPath, message);
+                MessageBox.Show(message);
+            }
+
         }
         catch (Exception ex)
         {
@@ -107,7 +136,19 @@ public static class DisplayFusionFunction
 
     private static bool CompileAssembly(string scriptPath, string assemblyPath, string compilerLogPath)
     {
-        string code = File.ReadAllText(scriptPath);
+        string code;
+        try
+        {
+            code = File.ReadAllText(scriptPath);
+        }
+        catch (Exception ex)
+        {
+            string message = $"Error during reading code from file:\n\n{ex}";
+            File.AppendAllText(compilerLogPath, message);
+            MessageBox.Show(message);
+            return false;
+        }
+
         var references = GetReferences();
         var compilationOptions = new CSharpCompilationOptions(
                  OutputKind.DynamicallyLinkedLibrary,
