@@ -6,6 +6,13 @@ using System.Collections.Generic;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using System.Windows.Forms;
+using System.Runtime.Loader;
+
+public class CollectibleALC : AssemblyLoadContext
+{
+    public CollectibleALC() : base(isCollectible: true) { }
+    protected override Assembly Load(AssemblyName assemblyName) => null;
+}
 
 public static class DisplayFusionFunction
 {
@@ -14,6 +21,10 @@ public static class DisplayFusionFunction
     private const string COMPILATION_LOGS_FILENAME = @"CompilationResults.log";
     private const string SCRIPT_FILENAME = @"minimisewindows.cs";
     private const string DLL_FILENAME = @"minimisewindows.dll";
+
+    private static Assembly cachedAssembly = null;
+    private static CollectibleALC currentALC = null;
+
     public static void Run(IntPtr windowHandle)
     {
         string scriptPath = Path.Combine(SCRIPT_REPOSITORY_DIRECTORY, SCRIPT_FILENAME);
@@ -25,15 +36,26 @@ public static class DisplayFusionFunction
             Assembly assembly = null;
             bool compileRequired = true;
 
+            // Skip compilation if DLL exists and source file was not modified in meantime
             if (File.Exists(assemblyPath))
             {
                 DateTime sourceTime = File.GetLastWriteTime(scriptPath);
                 DateTime assemblyTime = File.GetLastWriteTime(assemblyPath);
-                if (assemblyTime >= sourceTime) compileRequired = false;
+                if (assemblyTime >= sourceTime)
+                    compileRequired = false;
             }
 
             if (compileRequired)
             {
+                // If context was loaded unload it before compiling new DLL
+                if (currentALC != null)
+                {
+                    currentALC.Unload();
+                    currentALC = null;
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
+                }
+
                 string code = File.ReadAllText(scriptPath);
 
                 var references = new List<MetadataReference>
@@ -82,12 +104,30 @@ public static class DisplayFusionFunction
                         return;
                     }
                 }
-            } // compileRequired
+            } // End of compileRequired
+            // else MessageBox.Show($"Compilation skipped");
 
-            var assemblyBytes = File.ReadAllBytes(assemblyPath);
-            assembly = Assembly.Load(assemblyBytes);
 
-            // Find and invode metod Run from dynamically compiled code
+            // Use cached assembly if available and new wasn't just recompiled
+            if (!compileRequired && cachedAssembly != null)
+            {
+                // MessageBox.Show($"Loading assembly skipped");
+                assembly = cachedAssembly;
+            }
+            else // There is no cached assembly or it was just compiled
+            {
+                currentALC = new CollectibleALC();
+
+                // Load assembly from file into byte array and load it from it so that file is not locked
+                byte[] assemblyBytes = File.ReadAllBytes(assemblyPath);
+                assembly = currentALC.LoadFromStream(new MemoryStream(assemblyBytes));
+
+                // Cache newly loaded assembly
+                cachedAssembly = assembly;
+            }
+
+
+            // Find and invoke metod Run from dynamically compiled code
             Type type = assembly.GetType("DisplayFusionFunction");
             MethodInfo method = type.GetMethod("Run", new[] { typeof(IntPtr) });
             method.Invoke(null, new object[] { windowHandle });
