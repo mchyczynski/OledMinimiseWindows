@@ -221,7 +221,7 @@ public static class DisplayFusionFunction
     {
         if (windowsToSweep.Length == 0)
         {
-            MessageBox.Show($"ERROR <min>! SweepWindows no windows on sweep list");
+            Log.E("no windows on sweep list");
             return 0;
         }
 
@@ -235,11 +235,13 @@ public static class DisplayFusionFunction
         // calculate bounding box of all windows
         Rectangle boundingBox = CalculateBoundingBox(windowsToSweep);
 
+        Log.I("starting sweeping windows", new { windowsToSweep, boundingBox, monitorBoundsSource, monitorBoundsTarget });
+
         // loop through all windows to be swept
         int sweptWindowsCount = 0;
         foreach (IntPtr windowHandle in windowsToSweep)
         {
-            if (debugPrintHideRevive) MessageBox.Show($"sweeping window {BFS.Window.GetText(windowHandle)}");
+            Log.I("sweeping window", () => new { windowHandle, text = BFS.Window.GetText(windowHandle), sweptWindowsCount });
 
             // save info about swept window to store in settings so we can unsweep them later
             AppendSavedWindowInfo(windowHandle);
@@ -257,14 +259,14 @@ public static class DisplayFusionFunction
         // save the list of windows that were swept (with position info)
         BFS.ScriptSettings.WriteValue(SweptWindowsListSetting, GetSavedWindowInfoStr());
 
-        if (debugPrintStartStop) MessageBox.Show($"finished SWEEP (swept {sweptWindowsCount}/{windowsToSweep.Length} windows)");
+        Log.I($"finished sweep", new { sweptWindowsCount, windowsToSweep.Length });
 
         return sweptWindowsCount;
     }
 
     public static void HandleReviving(bool reviveAll)
     {
-        if (debugPrintStartStop) MessageBox.Show("start REVIVE");
+        Log.I("start reviving windows", new { reviveAll });
 
         // first restore mouse cursor position if enabled
         if (ShoudlMoveMouse()) HandleMouseBack();
@@ -296,9 +298,7 @@ public static class DisplayFusionFunction
         // if in focus mode, push windows that were active on top of revived ones
         FixZorderAfterReviveInFocusMode(windowsToPushOnTop);
 
-        if (debugPrintStartStop) MessageBox.Show($"finished REVIVE (revived {count}/{windowsToRevive.Length} windows)\n\n" +
-                                                 $"keptReviving: {keepReviving}");
-
+        Log.I($"finished revive", new { count, windowsToRevive.Length, keepReviving });
     }
 
     public static IntPtr[] GetListOfWindowsToRevive(bool forceReviveAll)
@@ -370,7 +370,7 @@ public static class DisplayFusionFunction
                                   var parts = line.Split(',');
                                   if (parts.Count() < 6)
                                   {
-                                      MessageBox.Show($"ERROR <min> parts < 6\nline: {line}");
+                                      Log.E("parts < 6", new { line }, showMessageBox: true);
                                       return (IntPtr.Zero, new Rectangle { }, false);
                                   }
                                   IntPtr windowHandle = (IntPtr)long.Parse(parts[0]);
@@ -390,19 +390,26 @@ public static class DisplayFusionFunction
                 // check if saved window handle is still valid (e.g. window wasn't closed in the meantime)
                 if (!WindowUtils.IsWindowValid(windowHandle))
                 {
-                    if (debugWindowFiltering) MessageBox.Show($"skipping invalid:\nwindowHandle {windowHandle}\nboundsWindow {boundsWindow}\nisMaximized {isMaximized}");
+                    Log.I("skipping invalid window", new { windowHandle, boundsWindow, isMaximized });
                     continue;
                 }
                 if (BFS.Window.IsMinimized(windowHandle))
                 {
-                    if (debugWindowFiltering) MessageBox.Show($"skipping saved but minimized :\nwindowHandle {windowHandle}\nboundsWindow {boundsWindow}\nisMaximized {isMaximized}");
+                    Log.I("skipping saved but minimized window", new { windowHandle, boundsWindow, isMaximized });
                     continue;
                 }
                 unsweepWindowsInfoMap[windowHandle] = (boundsWindow, isMaximized);
             }
             listOfWindowsToUnsweep = unsweepWindowsInfoMap.Keys.Cast<IntPtr>().ToArray();
+            Log.D("got list of windows to unsweep (map)", new { unsweepWindowsInfoMap });
+            Log.D("got list of windows to unsweep (keys)", new { listOfWindowsToUnsweep });
         }
 
+        Log.D("got list of windows to unsweep (with text and class)", () => new
+        {
+            windows = listOfWindowsToUnsweep.Select(window => $"{window}: |{BFS.Window.GetText(window)}| /{BFS.Window.GetClass(window)}/")
+        });
+        // todo remove listOfWindowsToUnsweepStr
         listOfWindowsToUnsweepStr = string.Join("\n",
                     listOfWindowsToUnsweep.Select(window =>
                        $"{window}: |{BFS.Window.GetText(window)}| /{BFS.Window.GetClass(window)}/"));
@@ -420,14 +427,14 @@ public static class DisplayFusionFunction
 
             if (BFS.Window.IsMinimized(windowHandle))
             {
-                if (debugPrintHideRevive) MessageBox.Show($"restoring window {BFS.Window.GetText(new IntPtr(windowHandle))}");
+                Log.I($"restoring window", () => new { text = BFS.Window.GetText(windowHandle) });
                 WindowUtils.RestoreWindow(windowHandle);
                 WindowUtils.PushToTop(windowHandle);
                 restoredWindowsCount += 1;
             }
             else
             {
-                if (debugPrintHideRevive) MessageBox.Show($"already restored window {BFS.Window.GetText(new IntPtr(windowHandle))}");
+                Log.D($"already restored window", () => new { text = BFS.Window.GetText(windowHandle) });
             }
         }
 
@@ -450,7 +457,7 @@ public static class DisplayFusionFunction
         // loop through each window to restore
         foreach (IntPtr windowHandle in windowsToUnsweep)
         {
-            if (debugPrintHideRevive) MessageBox.Show($"unsweeping window {BFS.Window.GetText(new IntPtr(windowHandle))}");
+            Log.I($"unsweeping window", () => new { text = BFS.Window.GetText(windowHandle) });
 
             // decide if position the window should be restored to saved value or swept in reverse direction
             if (HasSavedWindowInfo(windowHandle))
@@ -488,7 +495,7 @@ public static class DisplayFusionFunction
             {
                 if (DetectedInvalidWindow(windowHandle, "FixZorderAfterReviveInFocusMode", $"windowsToPushOnTop.Length: {windowsToPushOnTop.Length}")) return;
 
-                if (debugPrintHideRevive) MessageBox.Show($"Pushing window {BFS.Window.GetText(new IntPtr(windowHandle))} on top (focus mode)");
+                Log.D($"Pushing window on top (focus mode)", () => new { text = BFS.Window.GetText(windowHandle) });
                 WindowUtils.PushToTop(windowHandle);
             }
         }
@@ -513,14 +520,14 @@ public static class DisplayFusionFunction
             // move cursor to primary monitor
             var (mouseHideTargetX, mouseHideTargetY) = GetMouseHideTarget();
             BFS.Input.SetMousePosition(mouseHideTargetX, mouseHideTargetY);
-            if (debugPrintMoveCursor) MessageBox.Show($"HandleMouseOut: hiding mouse from mouseOldX({mouseX}) mouseOldY({mouseY})");
+            Log.I($"hiding mouse", new { mouseX, mouseY });
         }
         else // mouse on other monitor
         {
             // clear stored mouse position
             BFS.ScriptSettings.DeleteValue(MousePositionXSetting);
             BFS.ScriptSettings.DeleteValue(MousePositionYSetting);
-            if (debugPrintMoveCursor) MessageBox.Show($"HandleMouseOut: skip hiding mouse because not on 4k OLED monitor");
+            Log.D($"skip hiding mouse because not on 4k OLED monitor", new { mouseMonitorBounds, mouseX, mouseY });
         }
     }
 
@@ -533,6 +540,7 @@ public static class DisplayFusionFunction
         // abort when no stored position
         if (mouseOldX == 0 && mouseOldY == 0)
         {
+            Log.D("no stored mouse position");
             // ignore fact that mouse may actually be saved at 0,0 pos as a minor problem
             return;
         }
@@ -548,19 +556,18 @@ public static class DisplayFusionFunction
         int diffY = Math.Abs(mouseY - mouseHideTargetY);
 
         bool wasMoved = diffX > MOUSE_RESTORE_THRESHOLD || diffY > MOUSE_RESTORE_THRESHOLD;
+
+        Log.D("mouse debug info", new { mouseOldX, mouseOldY, mouseX, mouseY, mouseHideTargetX, mouseHideTargetY, diffX, diffY, wasMoved });
+
         if (!wasMoved)
         {
             // restore mouse position because it wasn't moved enough
-            if (debugPrintMoveCursor) MessageBox.Show($"HandleMouseBack: restoring to mouseOldX({mouseOldX}) mouseOldY({mouseOldY})");
+            Log.I($"restoring mouse position to saved coordinates");
             BFS.Input.SetMousePosition(mouseOldX, mouseOldY);
         }
         else
         {
-            if (debugPrintMoveCursor) MessageBox.Show($"HandleMouseBack: skiping restoring mouse was moved too much:\n" +
-                                                       $"mouseOldX({mouseOldX}) mouseOldY({mouseOldY})\n" +
-                                                       $"diffX({diffX}) diffY({diffY})\n" +
-                                                       $"mouseX({mouseX}) mouseY({mouseY})\n" +
-                                                       $"hideX({mouseHideTargetX}) hideY({mouseHideTargetY})");
+            Log.D($"skiping restoring mouse was moved too much");
         }
 
         // clear stored mouse position
@@ -1152,6 +1159,7 @@ public static class DisplayFusionFunction
     {
         if (!WindowUtils.IsWindowValid(windowHandle))
         {
+            // todo
             MessageBox.Show($"ERROR <min>! {windowName}\n" +
                            $" detected invalid window handle:\n{windowHandle} |{BFS.Window.GetText(windowHandle)}|\n\n" +
                            $"listOfWindowsToUnsweep {listOfWindowsToUnsweepStr}\n" +
@@ -1739,9 +1747,9 @@ public static class DisplayFusionFunction
             catch (Exception ex)
             {
                 MessageBox.Show($"Failed to initialize logger: {ex.Message}",
-                              "Logger Error",
-                              MessageBoxButtons.OK,
-                              MessageBoxIcon.Error);
+                                "Logger Error",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Error);
             }
         }
 
@@ -1811,12 +1819,12 @@ public static class DisplayFusionFunction
         }
 
         public static void E(string message,
-                               object variables = null,
-                               bool? showMessageBox = null,
-                               bool skipHeader = false,
+                            object variables = null,
+                            bool? showMessageBox = null,
+                            bool skipHeader = false,
                             Func<bool> condition = null,
-                               [CallerMemberName] string memberName = "",
-                               [CallerLineNumber] int lineNumber = 0)
+                            [CallerMemberName] string memberName = "",
+                            [CallerLineNumber] int lineNumber = 0)
                => LogInternal(LogLevel.Error, message, () => variables, showMessageBox, skipHeader, condition, memberName, lineNumber);
 
         public static void E(string message,
@@ -1895,7 +1903,7 @@ public static class DisplayFusionFunction
             condition ??= () => true;
 
             if (condition())
-        {
+            {
                 if ((int)level > (int)MinimumLogLevel) return;
 
                 object variables = null;
@@ -1904,13 +1912,13 @@ public static class DisplayFusionFunction
                     variables = variablesFactory(); // evaluate variables here
                 }
 
-            string formattedMessage = $"{message}";
-            if (!skipHeader)
-            {
-                formattedMessage = $"{memberName}():{lineNumber} {message}";
-            }
-            string fullMessage = BuildMessageWithVariables(formattedMessage, variables);
-            WriteLog(level, fullMessage, showMessageBox, skipHeader);
+                string formattedMessage = $"{message}";
+                if (!skipHeader)
+                {
+                    formattedMessage = $"{memberName}():{lineNumber} {message}";
+                }
+                string fullMessage = BuildMessageWithVariables(formattedMessage, variables);
+                WriteLog(level, fullMessage, showMessageBox, skipHeader);
             }
         }
 
@@ -1919,13 +1927,13 @@ public static class DisplayFusionFunction
             try
             {
                 string logEntry = skipHeader ?
-                     $"{message}\n" :
-                     $"{DateTime.Now:HH:mm:ss} [{level.ToShortString()}]\t{message}\n";
+                    $"{message}\n" :
+                    $"{DateTime.Now:HH:mm:ss} [{level.ToShortString()}]\t{message}\n";
 
                 if (!_logQueue.TryAdd(logEntry, 50)) // timeout 50ms
                 {
                     HandleQueueOverflow();
-                    }
+                }
 
                 if (ShouldShowMessageBox(level, showMessageBox))
                 {
@@ -1996,7 +2004,7 @@ public static class DisplayFusionFunction
                     // Final attempt to save logs in non standard location
                     try { File.AppendAllText(@"C:\Windows\Temp\emergency.log", $"{DateTime.Now:o}|{ex.Message}\n"); }
                     catch { /* Final ignore */ }
-        }
+                }
             }
         }
         private static bool ShouldShowMessageBox(LogLevel level, bool? showMessageBox)
@@ -2081,7 +2089,7 @@ public static class DisplayFusionFunction
         {
             var sb = new StringBuilder("[");
             int count = 0;
-int lineLen = _propIndentStr.Length;
+            int lineLen = _propIndentStr.Length;
             foreach (var item in collection)
             {
                 string logentry = $"{SerializeObject(item, depth + 1)}, ";
@@ -2099,7 +2107,7 @@ int lineLen = _propIndentStr.Length;
         {
             var sb = new StringBuilder("{");
             int count = 0;
-int lineLen = _propIndentStr.Length;
+            int lineLen = _propIndentStr.Length;
             foreach (DictionaryEntry entry in dictionary)
             {
                 string logentry = $"{SerializeObject(entry.Key)}: {SerializeObject(entry.Value)}, ";
