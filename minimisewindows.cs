@@ -1611,6 +1611,8 @@ public static class DisplayFusionFunction
         private static readonly object _emergencyLock = new object();
         private static readonly object _configLock = new object();
         private static DateTime _lastOverflowWarning = DateTime.MinValue;
+        private static string _propIndentStr = "";
+        private static int COLLECTION_BREAK_CHAR_LIMIT = 105;
         private static readonly string LogFilePath;
         private const string LOG_DIRECTORY = @"C:\Users\mikolaj\Documents\MinimizerLogs";
         private const string FILENAME_PREFIX = "Log_";
@@ -2034,6 +2036,7 @@ public static class DisplayFusionFunction
             foreach (var prop in properties)
             {
                 var value = prop.GetValue(variables);
+                _propIndentStr = new string(' ', prop.Name.Length + 3); // increase indent for ': [' or ': {'
                 sb.AppendLine(AddLeadingTabs($"{prop.Name}: {SerializeObject(value)}"));
             }
 
@@ -2058,18 +2061,35 @@ public static class DisplayFusionFunction
             };
         }
 
+        private static void AppendFormattedEntry(StringBuilder sb, string logentry, int count, ref int lineLen)
+        {
+            if (((lineLen + logentry.Length) > COLLECTION_BREAK_CHAR_LIMIT) && count > 0)
+            {
+                sb.AppendLine();
+                sb.Append(_propIndentStr);
+                lineLen = _propIndentStr.Length + logentry.Length;
+            }
+            else
+            {
+                lineLen += logentry.Length;
+            }
+
+            sb.Append(logentry);
+        }
+
         private static string SerializeCollection(IEnumerable collection, int depth)
         {
             var sb = new StringBuilder("[");
             int count = 0;
-
+int lineLen = _propIndentStr.Length;
             foreach (var item in collection)
             {
-                sb.Append($"{SerializeObject(item, depth + 1)}, ");
+                string logentry = $"{SerializeObject(item, depth + 1)}, ";
+                AppendFormattedEntry(sb, logentry, count, ref lineLen);
                 count++;
             }
 
-            if (sb.Length > 1) sb.Length -= 2; // remove last comma and space
+            if (sb.Length > 1) sb.Length -= 2; // remove last comma and space/newline
             sb.Append($"] ({count})");
 
             return sb.ToString();
@@ -2079,13 +2099,16 @@ public static class DisplayFusionFunction
         {
             var sb = new StringBuilder("{");
             int count = 0;
-
+int lineLen = _propIndentStr.Length;
             foreach (DictionaryEntry entry in dictionary)
             {
-                sb.Append($"{SerializeObject(entry.Key)}: {SerializeObject(entry.Value)}, ");
+                string logentry = $"{SerializeObject(entry.Key)}: {SerializeObject(entry.Value)}, ";
+
+                AppendFormattedEntry(sb, logentry, count, ref lineLen);
                 count++;
             }
-            if (sb.Length > 1) sb.Length -= 2; // remove last comma and space
+
+            if (sb.Length > 1) sb.Length -= 2; // remove last comma and space/newline
             sb.Append($"}} ({count})");
             return sb.ToString();
         }
@@ -2114,7 +2137,7 @@ public static class DisplayFusionFunction
 
             // The regex pattern ^\t+ matches one or more tabs at the beginning of a line.
             // The RegexOptions.Multiline flag makes the ^ anchor match at the start of each line.
-            return Regex.Replace(message, @"^\t+", " ", RegexOptions.Multiline);
+            return Regex.Replace(message, @"^(    )+", " ", RegexOptions.Multiline);
         }
 
         public static string AddLeadingTabs(string message)
@@ -2124,7 +2147,7 @@ public static class DisplayFusionFunction
 
             // The regex pattern ^ matches the beginning of a line.
             // The RegexOptions.Multiline flag makes the ^ anchor match at the start of each line.
-            return Regex.Replace(message, @"^", "\t\t\t\t", RegexOptions.Multiline);
+            return Regex.Replace(message, @"^", "                ", RegexOptions.Multiline);
         }
     } // Log
 }
