@@ -30,6 +30,7 @@ public static class Log
     private static readonly object _configLock = new object();
     private static DateTime _lastOverflowWarning = DateTime.MinValue;
     private static string _propIndentStr = "";
+    private static string _variablesIndentStr = new string(' ', 20);
     private static int COLLECTION_BREAK_CHAR_LIMIT = 105;
     private static readonly string LogFilePath;
     private const string LOG_DIRECTORY = @"C:\Users\mikolaj\Documents\MinimizerLogs";
@@ -479,13 +480,13 @@ public static class Log
         };
     }
 
-    private static void AppendFormattedEntry(StringBuilder sb, string logentry, int count, ref int lineLen)
+    private static void AppendFormattedEntry(StringBuilder sb, string logentry, int count, ref int lineLen, string indent)
     {
         if (((lineLen + logentry.Length) > COLLECTION_BREAK_CHAR_LIMIT) && count > 0)
         {
             sb.AppendLine();
-            sb.Append(_propIndentStr);
-            lineLen = _propIndentStr.Length + logentry.Length;
+            sb.Append(indent);
+            lineLen = indent.Length + logentry.Length;
         }
         else
         {
@@ -503,7 +504,7 @@ public static class Log
         foreach (var item in collection)
         {
             string logentry = $"{SerializeObject(item, depth + 1)}, ";
-            AppendFormattedEntry(sb, logentry, count, ref lineLen);
+            AppendFormattedEntry(sb, logentry, count, ref lineLen, _propIndentStr);
             count++;
         }
 
@@ -522,7 +523,7 @@ public static class Log
         {
             string logentry = $"{SerializeObject(entry.Key)}: {SerializeObject(entry.Value)}, ";
 
-            AppendFormattedEntry(sb, logentry, count, ref lineLen);
+            AppendFormattedEntry(sb, logentry, count, ref lineLen, _propIndentStr);
             count++;
         }
 
@@ -565,7 +566,7 @@ public static class Log
 
         // The regex pattern ^ matches the beginning of a line.
         // The RegexOptions.Multiline flag makes the ^ anchor match at the start of each line.
-        return Regex.Replace(message, @"^", "                ", RegexOptions.Multiline);
+        return Regex.Replace(message, @"^", _variablesIndentStr, RegexOptions.Multiline);
     }
 } // Log
 
