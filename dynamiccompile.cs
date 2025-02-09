@@ -9,71 +9,93 @@ using System.Windows.Forms;
 
 public static class DisplayFusionFunction
 {
+    private const string SCRIPT_REPOSITORY_DIRECTORY = @"C:\Users\mikolaj\Documents\OledMinimiseWindows";
+    private const string LOG_DIRECTORY = @"C:\Users\mikolaj\Documents\MinimizerLogs";
+    private const string COMPILATION_LOGS_FILENAME = @"CompilationResults.log";
+    private const string SCRIPT_FILENAME = @"minimisewindows.cs";
+    private const string DLL_FILENAME = @"minimisewindows.dll";
     public static void Run(IntPtr windowHandle)
     {
-        string scriptPath = @"C:\Users\mikolaj\Documents\OledMinimiseWindows\minimisewindows.cs";
+        string scriptPath = Path.Combine(SCRIPT_REPOSITORY_DIRECTORY, SCRIPT_FILENAME);
+        string assemblyPath = Path.Combine(SCRIPT_REPOSITORY_DIRECTORY, DLL_FILENAME);
+        string compilerLogPath = Path.Combine(LOG_DIRECTORY, COMPILATION_LOGS_FILENAME);
 
         try
         {
-            // MessageBox.Show($"About to compile");
-            string code = File.ReadAllText(scriptPath);
+            Assembly assembly = null;
+            bool compileRequired = true;
 
-            // Pobranie domyślnych referencji .NET
-            var references = new List<MetadataReference>
+            if (File.Exists(assemblyPath))
             {
-                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),       // System.Private.CoreLib.dll
-                MetadataReference.CreateFromFile(typeof(Console).Assembly.Location),      // System.Console.dll
-                MetadataReference.CreateFromFile(Assembly.Load("System.Runtime").Location),
-                MetadataReference.CreateFromFile(Assembly.Load("System.Linq").Location),
-                MetadataReference.CreateFromFile(Assembly.Load("System.Drawing").Location),
-                MetadataReference.CreateFromFile(Assembly.Load("System.Drawing.Primitives").Location),
-                MetadataReference.CreateFromFile(Assembly.Load("System.Windows.Forms").Location),
-                MetadataReference.CreateFromFile(Assembly.Load("System.Collections").Location),
-                MetadataReference.CreateFromFile(Assembly.Load("System.Collections.Concurrent").Location),
-                MetadataReference.CreateFromFile(Assembly.Load("System.Collections.Specialized").Location),
-                MetadataReference.CreateFromFile(Assembly.Load("System.Text.RegularExpressions").Location),
-                MetadataReference.CreateFromFile(@"C:\Program Files\DisplayFusion\DisplayFusion.dll"),
-                MetadataReference.CreateFromFile(@"C:\Program Files\DisplayFusion\DisplayFusionScripting.dll")
-            };
-
-            // Konfiguracja kompilatora Roslyn
-            var compilation = CSharpCompilation.Create(
-                "DynamicAssembly",
-                new[] { CSharpSyntaxTree.ParseText(code) },
-                references,
-                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
-                .WithSpecificDiagnosticOptions(new Dictionary<string, ReportDiagnostic>
-                                                {
-                                                    {"CS1701", ReportDiagnostic.Suppress}
-                                                })
-            );
-
-            using (var ms = new MemoryStream())
-            {
-                var result = compilation.Emit(ms);
-                // Pobranie błędów kompilacji
-                var errors = string.Join("\n", result.Diagnostics.Select(d => d.ToString()));
-                File.WriteAllText(@"C:\Users\mikolaj\Documents\MinimizerLogs\Błędy.log", $"Błędy kompilacji:\n{errors}");
-                if (!result.Success)
-                {
-                    MessageBox.Show($"Compiler errors:\n\n{errors}");
-                    return;
-                }
-
-                // Wczytaj skompilowany kod
-                ms.Seek(0, SeekOrigin.Begin);
-                var assembly = Assembly.Load(ms.ToArray());
-
-                // Znajdź i uruchom metodę Run
-                Type type = assembly.GetType("DisplayFusionFunction");
-                MethodInfo method = type.GetMethod("Run", new[] { typeof(IntPtr) });
-                method.Invoke(null, new object[] { windowHandle });
+                DateTime sourceTime = File.GetLastWriteTime(scriptPath);
+                DateTime assemblyTime = File.GetLastWriteTime(assemblyPath);
+                if (assemblyTime >= sourceTime) compileRequired = false;
             }
+
+            if (compileRequired)
+            {
+                string code = File.ReadAllText(scriptPath);
+
+                var references = new List<MetadataReference>
+                {
+                    MetadataReference.CreateFromFile(typeof(object).Assembly.Location),       // System.Private.CoreLib.dll
+                    MetadataReference.CreateFromFile(typeof(Console).Assembly.Location),      // System.Console.dll
+                    MetadataReference.CreateFromFile(Assembly.Load("System.Runtime").Location),
+                    MetadataReference.CreateFromFile(Assembly.Load("System.Linq").Location),
+                    MetadataReference.CreateFromFile(Assembly.Load("System.Drawing").Location),
+                    MetadataReference.CreateFromFile(Assembly.Load("System.Drawing.Primitives").Location),
+                    MetadataReference.CreateFromFile(Assembly.Load("System.Windows.Forms").Location),
+                    MetadataReference.CreateFromFile(Assembly.Load("System.Collections").Location),
+                    MetadataReference.CreateFromFile(Assembly.Load("System.Collections.Concurrent").Location),
+                    MetadataReference.CreateFromFile(Assembly.Load("System.Collections.Specialized").Location),
+                    MetadataReference.CreateFromFile(Assembly.Load("System.Text.RegularExpressions").Location),
+                    MetadataReference.CreateFromFile(@"C:\Program Files\DisplayFusion\DisplayFusion.dll"),
+                    MetadataReference.CreateFromFile(@"C:\Program Files\DisplayFusion\DisplayFusionScripting.dll")
+                };
+
+                var compilationOptions = new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+                    .WithSpecificDiagnosticOptions(new Dictionary<string, ReportDiagnostic>
+                    {
+                        { "CS1701", ReportDiagnostic.Suppress }
+                    });
+
+                // Code compilation
+                var compilation = CSharpCompilation.Create(
+                    "DynamicAssembly",
+                    new[] { CSharpSyntaxTree.ParseText(code) },
+                    references,
+                    compilationOptions
+                );
+
+                // Save compilation result to DLL file
+                using (var fs = new FileStream(assemblyPath, FileMode.Create, FileAccess.Write))
+                {
+                    var emitResult = compilation.Emit(fs);
+
+                    // Store compilation result to log file
+                    var compilationLogs = string.Join("\n", emitResult.Diagnostics.Select(d => d.ToString()));
+                    File.WriteAllText(compilerLogPath, $"Compilation logs:\n{compilationLogs}");
+
+                    if (!emitResult.Success)
+                    {
+                        MessageBox.Show($"Compilation errors:\n\n{compilationLogs}");
+                        return;
+                    }
+                }
+            } // compileRequired
+
+            var assemblyBytes = File.ReadAllBytes(assemblyPath);
+            assembly = Assembly.Load(assemblyBytes);
+
+            // Find and invode metod Run from dynamically compiled code
+            Type type = assembly.GetType("DisplayFusionFunction");
+            MethodInfo method = type.GetMethod("Run", new[] { typeof(IntPtr) });
+            method.Invoke(null, new object[] { windowHandle });
         }
         catch (Exception ex)
         {
             MessageBox.Show($"Exception:\n\n{ex}");
-            File.WriteAllText(@"C:\Users\mikolaj\Documents\MinimizerLogs\Błędy.log", $"Błąd: {ex}");
+            File.WriteAllText(compilerLogPath, $"Exception: {ex}");
         }
     }
 }
