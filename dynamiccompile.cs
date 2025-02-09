@@ -1,4 +1,4 @@
-// Add assembly to references:
+// Add assembly references:
 // C:\Program Files\DisplayFusion\Microsoft.CodeAnalysis.dll
 // C:\Program Files\DisplayFusion\Microsoft.CodeAnalysis.CSharp.dll
 
@@ -23,7 +23,13 @@ public static class DisplayFusionFunction
     private const string SCRIPT_REPOSITORY_DIRECTORY = @"C:\Users\mikolaj\Documents\OledMinimiseWindows";
     private const string LOG_DIRECTORY = @"C:\Users\mikolaj\Documents\MinimizerLogs";
     private const string COMPILATION_LOGS_FILENAME = @"CompilationResults.log";
-    private const string SCRIPT_FILENAME = @"minimisewindows.cs";
+    // Instead of a single file, we compile only the files specified in the list below.
+    private static readonly string[] SourceFileNames = new string[]
+    {
+        "minimisewindows.cs",
+        "log.cs",
+        "windowsutils.cs"
+    };
     private const string DLL_FILENAME = @"minimisewindows.dll";
 
     private static Assembly cachedAssembly = null;
@@ -32,7 +38,6 @@ public static class DisplayFusionFunction
 
     public static void Run(IntPtr windowHandle)
     {
-        string scriptPath = Path.Combine(SCRIPT_REPOSITORY_DIRECTORY, SCRIPT_FILENAME);
         string assemblyPath = Path.Combine(SCRIPT_REPOSITORY_DIRECTORY, DLL_FILENAME);
         string compilerLogPath = Path.Combine(LOG_DIRECTORY, COMPILATION_LOGS_FILENAME);
 
@@ -41,16 +46,17 @@ public static class DisplayFusionFunction
             Assembly assembly = null;
             bool compileRequired = true;
 
-
-            // Skip compilation if DLL exists and source file was not modified in meantime
-            DateTime sourceTime = File.GetLastWriteTime(scriptPath);
+            // Check if compilation is required by comparing the last write times of the source files and the DLL.
+            DateTime sourceTime = SourceFileNames
+                .Select(file => File.GetLastWriteTime(Path.Combine(SCRIPT_REPOSITORY_DIRECTORY, file)))
+                .Max();
             DateTime assemblyTime = File.Exists(assemblyPath) ? File.GetLastWriteTime(assemblyPath) : DateTime.MinValue;
-
-            if (assemblyTime >= sourceTime) compileRequired = false;
+            if (assemblyTime >= sourceTime)
+                compileRequired = false;
 
             if (compileRequired)
             {
-                // If context was loaded unload it before compiling new DLL
+                // If an AssemblyLoadContext was already loaded, unload it before compiling the new DLL.
                 if (currentALC != null)
                 {
                     currentALC.Unload();
@@ -60,38 +66,29 @@ public static class DisplayFusionFunction
                     GC.WaitForPendingFinalizers();
                 }
 
-
-                var references = GetReferences();
-                if (!CompileAssembly(scriptPath, assemblyPath, compilerLogPath))
+                if (!CompileAssembly(SCRIPT_REPOSITORY_DIRECTORY, assemblyPath, compilerLogPath))
                     return;
-
-            } // End of compileRequired
-              // else MessageBox.Show($"Compilation skipped");
+            }
+            // else MessageBox.Show("Compilation skipped");
 
             lock (assemblyLock)
             {
-                // Use cached assembly if available and new wasn't just recompiled
+                // Use the cached assembly if available and if compilation was not performed.
                 if (!compileRequired && cachedAssembly != null)
                 {
-                    // MessageBox.Show($"Loading assembly skipped");
                     assembly = cachedAssembly;
                 }
-                else // There is no cached assembly or it was just compiled
+                else // Otherwise, load the assembly from the file (via a byte array to avoid locking the file)
                 {
                     currentALC = new CollectibleALC();
-
-                    // Load assembly from file into byte array and load it from it so that file is not locked
                     byte[] assemblyBytes = File.ReadAllBytes(assemblyPath);
                     assembly = currentALC.LoadFromStream(new MemoryStream(assemblyBytes));
-
-                    // Cache newly loaded assembly
                     cachedAssembly = assembly;
                 }
             }
 
-            // Find and invoke metod Run from dynamically compiled code
+            // Find the class 'DisplayFusionFunction' in the compiled assembly.
             Type type = assembly.GetType("DisplayFusionFunction");
-
             if (type == null)
             {
                 string message = "Class 'DisplayFusionFunction' not found in compiled code.";
@@ -100,10 +97,11 @@ public static class DisplayFusionFunction
                 return;
             }
 
+            // Find the 'Run' method with the signature (IntPtr).
             MethodInfo method = type.GetMethod("Run", new[] { typeof(IntPtr) });
             if (method == null)
             {
-                string message = "Method 'Run()' not found in compiled code.";
+                string message = "Method 'Run(IntPtr)' not found in compiled code.";
                 File.AppendAllText(compilerLogPath, message);
                 MessageBox.Show(message);
                 return;
@@ -115,17 +113,16 @@ public static class DisplayFusionFunction
             }
             catch (TargetInvocationException tie)
             {
-                string message = $"Error during starting compiled code:\n\n{tie.InnerException}";
+                string message = $"Error during invocation of compiled code:\n\n{tie.InnerException}";
                 File.AppendAllText(compilerLogPath, message);
                 MessageBox.Show(message);
             }
             catch (Exception ex)
             {
-                string message = $"Unknown error during executing compiled code:\n\n{ex}";
+                string message = $"Unknown error during execution of compiled code:\n\n{ex}";
                 File.AppendAllText(compilerLogPath, message);
                 MessageBox.Show(message);
             }
-
         }
         catch (Exception ex)
         {
@@ -134,26 +131,33 @@ public static class DisplayFusionFunction
         }
     } // Run
 
-    private static bool CompileAssembly(string scriptPath, string assemblyPath, string compilerLogPath)
+    private static bool CompileAssembly(string sourceDirectory, string assemblyPath, string compilerLogPath)
     {
-        string code;
-        try
+        // Compile only the files specified in the SourceFileNames list.
+        List<SyntaxTree> syntaxTrees = new List<SyntaxTree>();
+        foreach (var file in SourceFileNames)
         {
-            code = File.ReadAllText(scriptPath);
-        }
-        catch (Exception ex)
-        {
-            string message = $"Error during reading code from file:\n\n{ex}";
-            File.AppendAllText(compilerLogPath, message);
-            MessageBox.Show(message);
-            return false;
+            string fullPath = Path.Combine(sourceDirectory, file);
+            try
+            {
+                string code = File.ReadAllText(fullPath);
+                syntaxTrees.Add(CSharpSyntaxTree.ParseText(code, path: fullPath));
+            }
+            catch (Exception ex)
+            {
+                string message = $"Error reading file '{fullPath}':\n\n{ex}";
+                File.AppendAllText(compilerLogPath, message);
+                MessageBox.Show(message);
+                return false;
+            }
         }
 
         var references = GetReferences();
+
         var compilationOptions = new CSharpCompilationOptions(
-                 OutputKind.DynamicallyLinkedLibrary,
-                 warningLevel: 4, // Max warning level
-                 generalDiagnosticOption: ReportDiagnostic.Warn // Treat warnings as warnings
+            OutputKind.DynamicallyLinkedLibrary,
+            warningLevel: 4, // Maximum warning level
+            generalDiagnosticOption: ReportDiagnostic.Warn // Treat warnings as warnings
         )
         .WithSpecificDiagnosticOptions(new Dictionary<string, ReportDiagnostic>
         {
@@ -162,7 +166,7 @@ public static class DisplayFusionFunction
 
         var compilation = CSharpCompilation.Create(
             "DynamicAssembly",
-            new[] { CSharpSyntaxTree.ParseText(code) },
+            syntaxTrees,
             references,
             compilationOptions
         );
@@ -185,20 +189,20 @@ public static class DisplayFusionFunction
     private static List<MetadataReference> GetReferences()
     {
         return new List<MetadataReference>
-    {
-        MetadataReference.CreateFromFile(typeof(object).Assembly.Location),       // System.Private.CoreLib.dll
-        MetadataReference.CreateFromFile(typeof(Console).Assembly.Location),      // System.Console.dll
-        MetadataReference.CreateFromFile(Assembly.Load("System.Runtime").Location),
-        MetadataReference.CreateFromFile(Assembly.Load("System.Linq").Location),
-        MetadataReference.CreateFromFile(Assembly.Load("System.Drawing").Location),
-        MetadataReference.CreateFromFile(Assembly.Load("System.Drawing.Primitives").Location),
-        MetadataReference.CreateFromFile(Assembly.Load("System.Windows.Forms").Location),
-        MetadataReference.CreateFromFile(Assembly.Load("System.Collections").Location),
-        MetadataReference.CreateFromFile(Assembly.Load("System.Collections.Concurrent").Location),
-        MetadataReference.CreateFromFile(Assembly.Load("System.Collections.Specialized").Location),
-        MetadataReference.CreateFromFile(Assembly.Load("System.Text.RegularExpressions").Location),
-        MetadataReference.CreateFromFile(@"C:\Program Files\DisplayFusion\DisplayFusion.dll"),
-        MetadataReference.CreateFromFile(@"C:\Program Files\DisplayFusion\DisplayFusionScripting.dll")
-    };
+        {
+            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),       // System.Private.CoreLib.dll
+            MetadataReference.CreateFromFile(typeof(Console).Assembly.Location),      // System.Console.dll
+            MetadataReference.CreateFromFile(Assembly.Load("System.Runtime").Location),
+            MetadataReference.CreateFromFile(Assembly.Load("System.Linq").Location),
+            MetadataReference.CreateFromFile(Assembly.Load("System.Drawing").Location),
+            MetadataReference.CreateFromFile(Assembly.Load("System.Drawing.Primitives").Location),
+            MetadataReference.CreateFromFile(Assembly.Load("System.Windows.Forms").Location),
+            MetadataReference.CreateFromFile(Assembly.Load("System.Collections").Location),
+            MetadataReference.CreateFromFile(Assembly.Load("System.Collections.Concurrent").Location),
+            MetadataReference.CreateFromFile(Assembly.Load("System.Collections.Specialized").Location),
+            MetadataReference.CreateFromFile(Assembly.Load("System.Text.RegularExpressions").Location),
+            MetadataReference.CreateFromFile(@"C:\Program Files\DisplayFusion\DisplayFusion.dll"),
+            MetadataReference.CreateFromFile(@"C:\Program Files\DisplayFusion\DisplayFusionScripting.dll")
+        };
     }
 }
