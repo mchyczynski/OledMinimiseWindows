@@ -109,11 +109,15 @@ public static class DisplayFusionFunction
     {
         string code = File.ReadAllText(scriptPath);
         var references = GetReferences();
-        var compilationOptions = new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
-            .WithSpecificDiagnosticOptions(new Dictionary<string, ReportDiagnostic>
-            {
-            { "CS1701", ReportDiagnostic.Suppress }
-            });
+        var compilationOptions = new CSharpCompilationOptions(
+                 OutputKind.DynamicallyLinkedLibrary,
+                 warningLevel: 4, // Max warning level
+                 generalDiagnosticOption: ReportDiagnostic.Warn // Treat warnings as warnings
+        )
+        .WithSpecificDiagnosticOptions(new Dictionary<string, ReportDiagnostic>
+        {
+            { "CS1701", ReportDiagnostic.Suppress }, // Rectangle older version
+        });
 
         var compilation = CSharpCompilation.Create(
             "DynamicAssembly",
